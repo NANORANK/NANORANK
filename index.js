@@ -77,15 +77,11 @@ client.on("interactionCreate", async (i) => {
   const db = loadDB();
 
   // 1 ห้อง = 1 ข้อความ reaction role
-  let data = Object.values(db).find(
-    d => d.channelId === i.channel.id
-  );
-
+  let data = Object.values(db).find(d => d.channelId === i.channel.id);
   let message;
 
-  // ถ้ายังไม่มี → สร้างใหม่
   if (!data) {
-    message = await i.channel.send("🎭 กดอิโมจิรับยศ");
+    message = await i.channel.send("🎭 กดอิโมจิรับยศ (กำลังตั้งค่า...)");
     data = {
       messageId: message.id,
       channelId: i.channel.id,
@@ -103,10 +99,19 @@ client.on("interactionCreate", async (i) => {
 
   await message.react(emoji);
 
-  let text = "**🎭 กดอิโมจิรับยศ (1 คน / 1 ยศ)**\n";
+  // ===== Build Message Text =====
+  let text =
+`🎭 กดอิโมจิรับยศ (1 คน / 1 ยศ)
+
+╭┈ ✧ : รับยศตกแต่ง ˗ˏˋ꒰ 🍒 ꒱
+`;
+
   for (const [em, r] of Object.entries(data.roles)) {
-    text += `${em} ➜ <@&${r}>\n`;
+    text += ` | ${em}・<@&${r}>\n`;
   }
+
+  text +=
+`╰ ┈ ✧ : จะเลือกยศใหม่ กดอิโมจิเดิมก่อนนะคะ ┆ • ➵ BY Zemon Źx`;
 
   await message.edit(text);
 
@@ -128,18 +133,16 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
   const member = await reaction.message.guild.members.fetch(user.id);
 
-  // มี role อยู่แล้ว
   if (data.users[user.id]) {
     reaction.users.remove(user.id).catch(() => {});
     user.send(
       `❌ คุณได้รับยศ <@&${data.users[user.id]}> แล้ว\n` +
-      `กรุณาถอนยศเดิมก่อนเพื่อเลือกใหม่`
+      `กรุณากดอิโมจิเดิมเพื่อถอนยศก่อน แล้วเลือกใหม่`
     ).then(m => setTimeout(() => m.delete().catch(() => {}), 10000))
      .catch(() => {});
     return;
   }
 
-  // role ถูกครอบแล้ว
   if (data.roleOwners[roleId]) {
     reaction.users.remove(user.id).catch(() => {});
     user.send("❌ ยศนี้มีคนเลือกไปแล้ว")
