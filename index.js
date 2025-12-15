@@ -58,17 +58,17 @@ const thaiTime = d =>
 function buildRRMessage(data) {
   let desc =
 ` # 🎭 กดอิโมจิรับยศ (1 คน / 1 ยศ)
-> - <a:emoji_10:1449150901628440767> คุณเลือกได้ 1 ยศ เท่านั้น
+> - ** <a:emoji_10:1449150901628440767> คุณเลือกได้ 1 ยศ เท่านั้น **
 > - <a:emoji_19:1449151254189314150> จะเลือกยศใหม่ กดอิโมจิเดิมก่อนนะคะ
 > - <a:emoji_34:1450185126901321892> เลือกรับยศใหม่ได้เลย
 > - <a:emoji_35:1450185285613650020> กดเกิน 1 อัน บอทจะ DM แจ้งเตือน
-# ╭┈ ✧ : รับยศตกแต่ง ˗ˏˋ꒰ <a:emoji_2:1449148118690959440> ꒱
+ ╭┈ ✧ : รับยศตกแต่ง ˗ˏˋ꒰ <a:emoji_2:1449148118690959440> ꒱
 `;
   for (const [emoji, roleId] of Object.entries(data.roles)) {
     desc += ` | ${emoji}・<@&${roleId}>\n`;
   }
   desc +=
-`# ╰ ┈ ✧ : รับยศตกแต่งฟรี 🐼 ┆ • ➵ BY Zemon Źx`;
+` ╰ ┈ ✧ : รับยศตกแต่งฟรี 🐼 ┆ • ➵ BY Zemon Źx`;
 
   return new EmbedBuilder()
     .setColor(0xffc0cb)
@@ -222,14 +222,14 @@ client.on("interactionCreate", async (i) => {
 
       if (!info) {
         embed.addFields({
-          name: `> - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
+          name: `> 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
           value: " > - 🎐 ยศตกแต่ง : ยังไม่มียศ",
           inline: false
         });
       } else {
         const d = new Date(info.time);
         embed.addFields({
-          name: `> - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
+          name: `> 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
           value:
 `> - 🎐 ยศตกแต่ง : ${info.emoji} ➜ <@&${info.roleId}>
 > - 📅 วันที่ : ${thaiDate(d)}
