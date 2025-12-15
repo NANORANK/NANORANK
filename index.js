@@ -9,7 +9,8 @@ const {
   ActivityType,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
+  InteractionResponseFlags
 } = require("discord.js");
 
 const fs = require("fs");
@@ -120,7 +121,7 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(config.TOKEN);
 
-// ================== CUSTOM STATUS ==================
+// ================== STATUS ==================
 const statuses = [
   "🕵️ ทำงานให้ ซีม่อน อยู่ คะ",
   "💔 เหงาจับใจ",
@@ -134,7 +135,7 @@ const statuses = [
 let statusIndex = 0;
 
 // ================== READY ==================
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   await rest.put(
     Routes.applicationCommands(config.CLIENT_ID),
     { body: commands }
@@ -151,7 +152,7 @@ client.once("ready", async () => {
   console.log("Bot ready");
 });
 
-// ================== INTERACTION ==================
+// ================== INTERACTION (RR) ==================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
   if (i.commandName !== "rr") return;
@@ -161,7 +162,7 @@ client.on("interactionCreate", async (i) => {
 
   // ===== ADD =====
   if (sub === "add") {
-    await i.deferReply({ ephemeral: true });
+    await i.deferReply({ flags: InteractionResponseFlags.Ephemeral });
 
     const emoji = i.options.getString("emoji");
     const role = i.options.getRole("role");
@@ -188,7 +189,7 @@ client.on("interactionCreate", async (i) => {
 
   // ===== REMOVE =====
   if (sub === "remove") {
-    await i.deferReply({ ephemeral: true });
+    await i.deferReply({ flags: InteractionResponseFlags.Ephemeral });
 
     const emoji = i.options.getString("emoji");
     const role = i.options.getRole("role");
@@ -256,7 +257,49 @@ client.on("interactionCreate", async (i) => {
   }
 });
 
-// ================== REACTION ADD ==================
+// ================== BUTTON (REFRESH FIX) ==================
+client.on("interactionCreate", async (i) => {
+  if (!i.isButton()) return;
+  if (i.customId !== "rr_refresh") return;
+
+  const db = loadDB();
+  const members = await i.guild.members.fetch();
+
+  const embed = new EmbedBuilder()
+    .setColor(0x87cefa)
+    .setTitle(" # 📋 Panel : รายชื่อสมาชิกที่มียศตกแต่ง (อัปเดต)");
+
+  members.forEach(m => {
+    if (m.user.bot) return;
+
+    let info;
+    for (const d of Object.values(db)) {
+      if (d.users?.[m.id]) info = d.users[m.id];
+    }
+
+    if (!info) {
+      embed.addFields({
+        name: ` > - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
+        value: " > - 🎐 ยศตกแต่ง : ยังไม่มียศ",
+        inline: false
+      });
+    } else {
+      const d = new Date(info.time);
+      embed.addFields({
+        name: ` > - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
+        value:
+` > - 🎐 ยศตกแต่ง : ${info.emoji} ➜ <@&${info.roleId}>
+> - 📅 วันที่ : ${thaiDate(d)}
+> - ⏰ เวลา : ${thaiTime(d)}`,
+        inline: false
+      });
+    }
+  });
+
+  await i.update({ embeds: [embed] });
+});
+
+// ================== REACTION ADD (LOCK) ==================
 client.on("messageReactionAdd", async (reaction, user) => {
   if (user.bot) return;
   if (reaction.partial) await reaction.fetch();
@@ -266,12 +309,16 @@ client.on("messageReactionAdd", async (reaction, user) => {
   if (!data) return;
 
   const emoji = reaction.emoji.toString();
-  const roleId = data.roles[emoji];
-  if (!roleId) return;
 
+  // 🔒 LOCK: remove emoji not in system
+  if (!data.roles[emoji]) {
+    await reaction.users.remove(user.id).catch(() => {});
+    return;
+  }
+
+  const roleId = data.roles[emoji];
   const member = await reaction.message.guild.members.fetch(user.id);
 
-  // already has role
   if (data.users[user.id]) {
     await reaction.users.remove(user.id).catch(() => {});
     await user.send(
