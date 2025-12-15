@@ -38,7 +38,7 @@ const saveDB = (data) =>
 // ================== TIME (TH) ==================
 const tz = config.TIMEZONE || "Asia/Bangkok";
 
-const thaiDate = (d) =>
+const thaiDate = d =>
   new Intl.DateTimeFormat("th-TH", {
     timeZone: tz,
     year: "numeric",
@@ -46,7 +46,7 @@ const thaiDate = (d) =>
     day: "numeric"
   }).format(d);
 
-const thaiTime = (d) =>
+const thaiTime = d =>
   new Intl.DateTimeFormat("th-TH", {
     timeZone: tz,
     hour: "2-digit",
@@ -54,7 +54,7 @@ const thaiTime = (d) =>
     hour12: false
   }).format(d);
 
-const thaiPeriod = (d) => {
+const thaiPeriod = d => {
   const h = Number(
     new Intl.DateTimeFormat("en-US", {
       timeZone: tz,
@@ -62,10 +62,10 @@ const thaiPeriod = (d) => {
       hour12: false
     }).format(d)
   );
-  if (h >= 6 && h < 12) return "☀️ ตอนเช้า";
-  if (h >= 12 && h < 16) return "🌤️ ตอนกลางวัน";
-  if (h >= 16 && h < 19) return "🌇 ตอนเย็น";
-  return "🌙 ตอนมืด";
+  if (h >= 6 && h < 12) return " > ☀️ : ตอนเช้า";
+  if (h >= 12 && h < 16) return " > 🌤️ : ตอนกลางวัน";
+  if (h >= 16 && h < 19) return " > 🌇 : ตอนเย็น";
+  return " > 🌙 : ตอนมืด";
 };
 
 // ================== RR EMBED ==================
@@ -73,16 +73,18 @@ function buildRRMessage(data) {
   let desc =
 ` # 🎭 กดอิโมจิรับยศ (1 คน / 1 ยศ)
 > - <a:emoji_10:1449150901628440767> คุณเลือกได้ 1 ยศ เท่านั้น
-> - <a:emoji_19:1449151254189314150> จะเลือกยศใหม่ กดอิโมจิ เดิมก่อนนะคะ
-> - <a:emoji_34:1450185126901321892> และเลือก กดอิโมจิ รับยศใหม่ๆได้เลยคะ
-> - <a:emoji_35:1450185285613650020> กดอิโมจิเกิน 1 อันบอทจะ DM คุณไป อ่านด้วยนะคะ
-╭┈ ✧ : รับยศตกแต่ง ˗ˏˋ꒰ <a:emoji_2:1449148118690959440> ꒱
+> - <a:emoji_19:1449151254189314150> จะเลือกยศใหม่ กดอิโมจิเดิมก่อนนะคะ
+> - <a:emoji_34:1450185126901321892> เลือกรับยศใหม่ได้เลย
+> - <a:emoji_35:1450185285613650020> กดเกิน 1 อัน บอทจะ DM แจ้งเตือน
+╭┈ ✧ : # รับยศตกแต่ง ˗ˏˋ꒰ <a:emoji_2:1449148118690959440> ꒱
 `;
+
   for (const [emoji, roleId] of Object.entries(data.roles)) {
     desc += ` | ${emoji}・<@&${roleId}>\n`;
   }
+
   desc +=
-`╰ ┈ ✧ : รับยศตกแต่งฟรี 🐼 ┆ • ➵ BY Zemon Źx`;
+`╰ ┈ ✧ : # รับยศตกแต่งฟรี 🐼 ┆ • ➵ BY Zemon Źx`;
 
   return new EmbedBuilder()
     .setColor(0xffc0cb)
@@ -163,18 +165,69 @@ client.once("ready", async () => {
   console.log("Bot ready");
 });
 
-// ================== RR LIST (BUTTON) ==================
+// ================== INTERACTION (FIXED) ==================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
   if (i.commandName !== "rr") return;
 
-  const db = loadDB();
+  await i.deferReply({ ephemeral: true });
 
-  if (i.options.getSubcommand() === "list") {
+  const db = loadDB();
+  const sub = i.options.getSubcommand();
+
+  // ===== ADD =====
+  if (sub === "add") {
+    const emoji = i.options.getString("emoji");
+    const role = i.options.getRole("role");
+
+    let data = Object.values(db).find(d => d.channelId === i.channel.id);
+    let msg;
+
+    if (!data) {
+      msg = await i.channel.send({ embeds: [buildRRMessage({ roles: {} })] });
+      data = { channelId: i.channel.id, messageId: msg.id, roles: {}, users: {} };
+      db[msg.id] = data;
+    } else {
+      msg = await i.channel.messages.fetch(data.messageId);
+    }
+
+    data.roles[emoji] = role.id;
+    saveDB(db);
+
+    await msg.react(emoji).catch(() => {});
+    await msg.edit({ embeds: [buildRRMessage(data)] });
+
+    return i.editReply("✅ เพิ่มเรียบร้อย");
+  }
+
+  // ===== REMOVE =====
+  if (sub === "remove") {
+    const emoji = i.options.getString("emoji");
+    const role = i.options.getRole("role");
+
+    const data = Object.values(db).find(d => d.channelId === i.channel.id);
+    if (!data || data.roles[emoji] !== role.id) {
+      return i.editReply("❌ อิโมจิหรือยศไม่ตรง");
+    }
+
+    delete data.roles[emoji];
+    saveDB(db);
+
+    const msg = await i.channel.messages.fetch(data.messageId);
+    await msg.edit({ embeds: [buildRRMessage(data)] });
+
+    const react = msg.reactions.cache.find(r => r.emoji.toString() === emoji);
+    if (react) await react.remove().catch(() => {});
+
+    return i.editReply("🗑️ ลบเรียบร้อย");
+  }
+
+  // ===== LIST =====
+  if (sub === "list") {
     const members = await i.guild.members.fetch();
     const embed = new EmbedBuilder()
       .setColor(0x87cefa)
-      .setTitle("📋 Panel : รายชื่อสมาชิกที่มียศตกแต่ง");
+      .setTitle(" # 📋 Panel : รายชื่อสมาชิกที่มียศตกแต่ง");
 
     members.forEach(m => {
       if (m.user.bot) return;
@@ -186,18 +239,18 @@ client.on("interactionCreate", async (i) => {
 
       if (!info) {
         embed.addFields({
-          name: `🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
-          value: "🎐 ยศตกแต่ง : ยังไม่มียศ",
+          name: ` > - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
+          value: " > - 🎐 ยศตกแต่ง : ยังไม่มียศ",
           inline: false
         });
       } else {
         const d = new Date(info.time);
         embed.addFields({
-          name: `🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
+          name: ` > - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
           value:
-`🎐 ยศตกแต่ง : ${info.emoji} ➜ <@&${info.roleId}>
-📅 วันที่ : ${thaiDate(d)}
-⏰ เวลา : ${thaiTime(d)}
+` > - 🎐 ยศตกแต่ง : ${info.emoji} ➜ <@&${info.roleId}>
+> - 📅 วันที่ : ${thaiDate(d)}
+> - ⏰ เวลา : ${thaiTime(d)}
 ${thaiPeriod(d)}`,
           inline: false
         });
@@ -212,7 +265,7 @@ ${thaiPeriod(d)}`,
         .setStyle(ButtonStyle.Primary)
     );
 
-    return i.reply({ embeds: [embed], components: [row] });
+    return i.editReply({ embeds: [embed], components: [row] });
   }
 });
 
