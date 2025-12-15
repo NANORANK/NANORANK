@@ -6,12 +6,18 @@ const {
   REST,
   Routes,
   EmbedBuilder,
-  ActivityType
+  ActivityType,
+  ChannelType
 } = require("discord.js");
 
 const fs = require("fs");
 const express = require("express");
 const config = require("./config");
+
+// ===== SERVER INFO (ใช้ใน DM) =====
+const SERVER_NAME = "xSwift Hub";
+const SERVER_INVITE = "https://discord.gg/AYby9ypmyy";
+const SERVER_ID = "1449115718472826957";
 
 // ===== Keep Alive =====
 const app = express();
@@ -31,7 +37,8 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.DirectMessages
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildVoiceStates
   ],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
@@ -64,6 +71,15 @@ const commands = [
     .addSubcommand(s =>
       s.setName("list")
         .setDescription("ดูรายชื่อคนที่ถือยศ (เจ้าของเซิฟเท่านั้น)")
+    ),
+  new SlashCommandBuilder()
+    .setName("joinvc")
+    .setDescription("สั่งให้บอทเข้า Voice Channel (เฉพาะเจ้าของเซิฟ)")
+    .addChannelOption(o =>
+      o.setName("channel")
+        .setDescription("ช่องเสียง")
+        .addChannelTypes(ChannelType.GuildVoice)
+        .setRequired(true)
     )
 ];
 
@@ -71,13 +87,12 @@ const rest = new REST({ version: "10" }).setToken(config.TOKEN);
 
 // ===== Status Rotation =====
 const statuses = [
-  ":green_cycle: ทำงานให้ ซีม่อน อยู่ คะ",
-  ":CM_63: เหงาจับใจ",
-  ":a025IBO862454328816435210: รัก ซีม่อน",
-  ":UNV34: มีแค่เธอนะ เบบี๋",
-  ":ghostface1: เรากลัวผีนะ"
+  "🟢 ทำงานให้ ซีม่อน อยู่ คะ",
+  "💔 เหงาจับใจ",
+  "💖 รัก ซีม่อน",
+  "🥺 มีแค่เธอนะ เบบี๋",
+  "👻 เรากลัวผีนะ"
 ];
-
 let statusIndex = 0;
 
 // ===== Ready =====
@@ -89,12 +104,7 @@ client.once("ready", async () => {
 
   setInterval(() => {
     client.user.setPresence({
-      activities: [
-        {
-          name: statuses[statusIndex],
-          type: ActivityType.Custom
-        }
-      ],
+      activities: [{ name: statuses[statusIndex], type: ActivityType.Custom }],
       status: "online"
     });
     statusIndex = (statusIndex + 1) % statuses.length;
@@ -142,16 +152,15 @@ client.on("interactionCreate", async (i) => {
     saveDB(db);
     await message.react(emoji);
 
-    let desc =
-`🎭 กดอิโมจิรับยศ (1 คน / 1 ยศ)
+let desc =
+`> - #🎭 กดอิโมจิรับยศ (1 คน / 1 ยศ)
+ > - 🎏 ถ้าคุณจะกดอิโมจิมากว่า 1 บอทจะDMคุณไปนะ
 
 ╭┈ ✧ : รับยศตกแต่ง ˗ˏˋ꒰ 🍒 ꒱
 `;
-
     for (const [em, r] of Object.entries(data.roles)) {
       desc += ` | ${em}・<@&${r}>\n`;
     }
-
     desc +=
 `╰ ┈ ✧ : จะเลือกยศใหม่ กดอิโมจิเดิมก่อนนะคะ ┆ • ➵ BY Zemon Źx`;
 
@@ -170,7 +179,7 @@ client.on("interactionCreate", async (i) => {
     let data = Object.values(db).find(d => d.channelId === i.channel.id);
     if (!data || data.roles[emoji] !== role.id) {
       await i.user.send(
-        `⚠️ แจ้งเตือน\nไม่พบอิโมจิ ${emoji} กับยศ ${role}\nกรุณาตรวจสอบอีกครั้งนะคะ`
+        `⚠️ แจ้งเตือนจาก ${SERVER_NAME}\n\nไม่พบอิโมจิ ${emoji} กับยศ ${role}\nกรุณาตรวจสอบอีกครั้งนะคะ`
       );
       return i.reply({ content: "❌ ข้อมูลไม่ตรง (ส่ง DM แล้ว)", ephemeral: true });
     }
@@ -189,7 +198,7 @@ client.on("interactionCreate", async (i) => {
         const date = new Date(info.time);
         text +=
 `👤 <@${userId}>
-🎭 ${info.emoji} → <@&${info.roleId}>
+🎭 ${info.emoji}
 🕒 ${date.toLocaleString("th-TH")}
 
 `;
@@ -204,6 +213,26 @@ client.on("interactionCreate", async (i) => {
       embeds: [new EmbedBuilder().setColor(0x90ee90).setDescription(text)],
       ephemeral: true
     });
+  }
+
+  // ===== /joinvc =====
+  if (i.commandName === "joinvc") {
+    let joinVoiceChannel;
+    try {
+      ({ joinVoiceChannel } = require("@discordjs/voice"));
+    } catch {
+      return i.reply({ content: "❌ ระบบ Voice ไม่พร้อมบนโฮสต์นี้", ephemeral: true });
+    }
+
+    const channel = i.options.getChannel("channel");
+    joinVoiceChannel({
+      channelId: channel.id,
+      guildId: channel.guild.id,
+      adapterCreator: channel.guild.voiceAdapterCreator,
+      selfDeaf: false
+    });
+
+    return i.reply({ content: `✅ บอทเข้าห้องเสียง ${channel}`, ephemeral: true });
   }
 });
 
@@ -230,10 +259,16 @@ client.on("messageReactionAdd", async (reaction, user) => {
         new EmbedBuilder()
           .setColor(0xffb6c1)
           .setDescription(
-`💌 แจ้งเตือนจากเซิฟเวอร์
+` > #💌 แจ้งเตือนจากเซิฟเวอร์
+${SERVER_NAME}
+${SERVER_INVITE}
 
-คุณได้รับยศ <@&${data.users[user.id].roleId}> ไปแล้วนะคะ ✨
-กรุณากดอิโมจิเดิมเพื่อถอนยศ แล้วเลือกใหม่ได้เลย 💖`
+- สวัสดี <@${user.id}> ✨
+
+> - คุณต้องกดอิโมจิ #อันเดิม
+- เพื่อถอนยศที่เลือกไว้ก่อนนะคะ
+
+- จากนั้นสามารถกลับไปเลือกยศใหม่ ๆ ได้เลย 💖`
           )
       ]
     }).catch(() => {});
@@ -256,9 +291,7 @@ client.on("messageReactionRemove", async (reaction, user) => {
 
   const db = loadDB();
   const data = db[reaction.message.id];
-  if (!data) return;
-
-  if (!data.users[user.id]) return;
+  if (!data || !data.users[user.id]) return;
 
   const member = await reaction.message.guild.members.fetch(user.id);
   await member.roles.remove(data.users[user.id].roleId).catch(() => {});
