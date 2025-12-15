@@ -145,12 +145,37 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(config.TOKEN);
 
+// ================== CUSTOM STATUS (5 ข้อ) ==================
+const statuses = [
+  "🟢 ทำงานให้ ซีม่อน อยู่ คะ",
+  "💔 เหงาจับใจ",
+  "💖 รัก ซีม่อน",
+  "🥺 มีแค่เธอนะ เบบี๋",
+  "👻 เรากลัวผีนะ"
+];
+let statusIndex = 0;
+
 // ================== READY ==================
 client.once("ready", async () => {
   await rest.put(
     Routes.applicationCommands(config.CLIENT_ID),
     { body: commands }
   );
+
+  // rotate status ทุก 2.5 วิ
+  setInterval(() => {
+    client.user.setPresence({
+      activities: [
+        {
+          name: statuses[statusIndex],
+          type: ActivityType.Custom
+        }
+      ],
+      status: "online"
+    });
+    statusIndex = (statusIndex + 1) % statuses.length;
+  }, 2500);
+
   console.log("Bot ready");
 });
 
@@ -158,7 +183,6 @@ client.once("ready", async () => {
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
 
-  // owner only
   if (i.guild.ownerId !== i.user.id) {
     return i.reply({ content: "❌ เฉพาะเจ้าของเซิฟนะค้าบ", ephemeral: true });
   }
@@ -175,12 +199,7 @@ client.on("interactionCreate", async (i) => {
 
     if (!data) {
       msg = await i.channel.send({ embeds: [buildRRMessage({ roles: {} })] });
-      data = {
-        channelId: i.channel.id,
-        messageId: msg.id,
-        roles: {},
-        users: {}
-      };
+      data = { channelId: i.channel.id, messageId: msg.id, roles: {}, users: {} };
       db[msg.id] = data;
     } else {
       msg = await i.channel.messages.fetch(data.messageId);
@@ -255,7 +274,7 @@ ${thaiPeriod(d)}`,
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("rr_refresh")
-        .setLabel("🔄 รีเฟรช")
+        .setLabel("<a:emoji_33:1450155386786152468> รีเฟรช")
         .setStyle(ButtonStyle.Primary)
     );
 
@@ -335,7 +354,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
   const member = await reaction.message.guild.members.fetch(user.id);
 
-  // already has role
   if (data.users[user.id]) {
     await reaction.users.remove(user.id).catch(() => {});
     await user.send(
