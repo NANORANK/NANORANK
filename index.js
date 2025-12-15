@@ -61,6 +61,10 @@ const commands = [
           o.setName("role").setDescription("ยศ").setRequired(true)
         )
     )
+    .addSubcommand(s =>
+      s.setName("list")
+        .setDescription("ดูรายชื่อคนที่ถือยศ (เจ้าของเซิฟเท่านั้น)")
+    )
 ];
 
 const rest = new REST({ version: "10" }).setToken(config.TOKEN);
@@ -92,7 +96,7 @@ client.once("ready", async () => {
         }
       ],
       status: "online"
-    };
+    });
     statusIndex = (statusIndex + 1) % statuses.length;
   }, 2500);
 
@@ -119,11 +123,9 @@ client.on("interactionCreate", async (i) => {
     let message;
 
     if (!data) {
-      const embed = new EmbedBuilder()
-        .setColor(0xffc0cb)
-        .setDescription("🎭 กดอิโมจิรับยศ (กำลังตั้งค่า...)");
-
-      message = await i.channel.send({ embeds: [embed] });
+      message = await i.channel.send({
+        embeds: [new EmbedBuilder().setColor(0xffc0cb).setDescription("🎭 กดอิโมจิรับยศ")]
+      });
 
       data = {
         messageId: message.id,
@@ -153,8 +155,9 @@ client.on("interactionCreate", async (i) => {
     desc +=
 `╰ ┈ ✧ : จะเลือกยศใหม่ กดอิโมจิเดิมก่อนนะคะ ┆ • ➵ BY Zemon Źx`;
 
-    const embed = new EmbedBuilder().setColor(0xffc0cb).setDescription(desc);
-    await message.edit({ embeds: [embed] });
+    await message.edit({
+      embeds: [new EmbedBuilder().setColor(0xffc0cb).setDescription(desc)]
+    });
 
     return i.reply({ content: "✅ เพิ่มเรียบร้อย", ephemeral: true });
   }
@@ -167,15 +170,40 @@ client.on("interactionCreate", async (i) => {
     let data = Object.values(db).find(d => d.channelId === i.channel.id);
     if (!data || data.roles[emoji] !== role.id) {
       await i.user.send(
-        `⚠️ แจ้งเตือน\n\nไม่พบอิโมจิ ${emoji} กับยศ ${role}\nกรุณาตรวจสอบอีกครั้งนะคะ 💔`
+        `⚠️ แจ้งเตือน\nไม่พบอิโมจิ ${emoji} กับยศ ${role}\nกรุณาตรวจสอบอีกครั้งนะคะ`
       );
-      return i.reply({ content: "❌ ข้อมูลไม่ตรง ส่งแจ้งเตือนทาง DM แล้ว", ephemeral: true });
+      return i.reply({ content: "❌ ข้อมูลไม่ตรง (ส่ง DM แล้ว)", ephemeral: true });
     }
 
     delete data.roles[emoji];
     saveDB(db);
+    return i.reply({ content: "✅ ลบเรียบร้อย", ephemeral: true });
+  }
 
-    return i.reply({ content: "✅ ลบอิโมจิ + ยศ เรียบร้อย", ephemeral: true });
+  // ===== /rr list =====
+  if (i.commandName === "rr" && i.options.getSubcommand() === "list") {
+    let text = "📋 **รายชื่อสมาชิกที่ถือยศ**\n\n";
+
+    for (const data of Object.values(db)) {
+      for (const [userId, info] of Object.entries(data.users)) {
+        const date = new Date(info.time);
+        text +=
+`👤 <@${userId}>
+🎭 ${info.emoji} → <@&${info.roleId}>
+🕒 ${date.toLocaleString("th-TH")}
+
+`;
+      }
+    }
+
+    if (text === "📋 **รายชื่อสมาชิกที่ถือยศ**\n\n") {
+      text += "ยังไม่มีใครถือยศเลยนะคะ";
+    }
+
+    return i.reply({
+      embeds: [new EmbedBuilder().setColor(0x90ee90).setDescription(text)],
+      ephemeral: true
+    });
   }
 });
 
@@ -197,26 +225,27 @@ client.on("messageReactionAdd", async (reaction, user) => {
   if (data.users[user.id]) {
     await reaction.users.remove(user.id).catch(() => {});
 
-    const dm = new EmbedBuilder()
-      .setColor(0xffb6c1)
-      .setDescription(
+    await user.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xffb6c1)
+          .setDescription(
 `💌 แจ้งเตือนจากเซิฟเวอร์
 
-คุณได้รับยศ <@&${data.users[user.id]}> ไปแล้วนะคะ ✨
-
-➜ กรุณากดอิโมจิเดิมเพื่อถอนยศ
-➜ แล้วเลือกยศใหม่ได้เลย
-
-ด้วยรัก 💖
-<a:emoji_2~1:>`
-      );
-
-    await user.send({ embeds: [dm] }).catch(() => {});
+คุณได้รับยศ <@&${data.users[user.id].roleId}> ไปแล้วนะคะ ✨
+กรุณากดอิโมจิเดิมเพื่อถอนยศ แล้วเลือกใหม่ได้เลย 💖`
+          )
+      ]
+    }).catch(() => {});
     return;
   }
 
   await member.roles.add(roleId).catch(() => {});
-  data.users[user.id] = roleId;
+  data.users[user.id] = {
+    roleId,
+    emoji: emojiKey,
+    time: Date.now()
+  };
   saveDB(db);
 });
 
@@ -229,14 +258,10 @@ client.on("messageReactionRemove", async (reaction, user) => {
   const data = db[reaction.message.id];
   if (!data) return;
 
-  const emojiKey = reaction.emoji.toString();
-  const roleId = data.roles[emojiKey];
-  if (!roleId) return;
-
-  if (data.users[user.id] !== roleId) return;
+  if (!data.users[user.id]) return;
 
   const member = await reaction.message.guild.members.fetch(user.id);
-  await member.roles.remove(roleId).catch(() => {});
+  await member.roles.remove(data.users[user.id].roleId).catch(() => {});
   delete data.users[user.id];
   saveDB(db);
 });
