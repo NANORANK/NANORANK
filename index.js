@@ -72,21 +72,23 @@ const thaiPeriod = (d) => {
 function buildRRMessage(data) {
   let desc =
 ` # 🎭 กดอิโมจิรับยศ (1 คน / 1 ยศ)
-> - ‼️ คุณเลือกได้ 1 ยศ เท่านั้น
-> - 🧸 จะเลือกยศใหม่ กดอิโมจิ เดิมก่อนนะคะ
-> - 🎀 และเลือก กดอิโมจิ รับยศใหม่ๆได้เลยคะ
-> - ⛔️ กดอิโมจิเกิน 1 อันบอทจะ DM คุณไป อ่านด้วยนะคะ
-╭┈ ✧ : รับยศตกแต่ง ˗ˏˋ꒰ 🍒 ꒱
+> - <a:emoji_10:1449150901628440767> คุณเลือกได้ 1 ยศ เท่านั้น
+> - <a:emoji_19:1449151254189314150> จะเลือกยศใหม่ กดอิโมจิ เดิมก่อนนะคะ
+> - <a:emoji_34:1450185126901321892> และเลือก กดอิโมจิ รับยศใหม่ๆได้เลยคะ
+> - <a:emoji_35:1450185285613650020> กดอิโมจิเกิน 1 อันบอทจะ DM คุณไป อ่านด้วยนะคะ
+╭┈ ✧ : รับยศตกแต่ง ˗ˏˋ꒰ <a:emoji_2:1449148118690959440> ꒱
 `;
   for (const [emoji, roleId] of Object.entries(data.roles)) {
     desc += ` | ${emoji}・<@&${roleId}>\n`;
   }
   desc +=
 `╰ ┈ ✧ : รับยศตกแต่งฟรี 🐼 ┆ • ➵ BY Zemon Źx`;
+
   return new EmbedBuilder()
     .setColor(0xffc0cb)
     .setDescription(desc);
 }
+
 // ================== CLIENT ==================
 const client = new Client({
   intents: [
@@ -96,6 +98,7 @@ const client = new Client({
   ],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
+
 // ================== COMMANDS ==================
 const commands = [
   new SlashCommandBuilder()
@@ -160,65 +163,14 @@ client.once("ready", async () => {
   console.log("Bot ready");
 });
 
-// ================== INTERACTION ==================
+// ================== RR LIST (BUTTON) ==================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
-
-  if (i.guild.ownerId !== i.user.id) {
-    return i.reply({ content: "❌ เฉพาะเจ้าของเซิฟนะค้าบ", ephemeral: true });
-  }
+  if (i.commandName !== "rr") return;
 
   const db = loadDB();
 
-  // ===== RR ADD =====
-  if (i.commandName === "rr" && i.options.getSubcommand() === "add") {
-    const emoji = i.options.getString("emoji");
-    const role = i.options.getRole("role");
-
-    let data = Object.values(db).find(d => d.channelId === i.channel.id);
-    let msg;
-
-    if (!data) {
-      msg = await i.channel.send({ embeds: [buildRRMessage({ roles: {} })] });
-      data = { channelId: i.channel.id, messageId: msg.id, roles: {}, users: {} };
-      db[msg.id] = data;
-    } else {
-      msg = await i.channel.messages.fetch(data.messageId);
-    }
-
-    data.roles[emoji] = role.id;
-    saveDB(db);
-
-    await msg.react(emoji).catch(() => {});
-    await msg.edit({ embeds: [buildRRMessage(data)] });
-
-    return i.reply({ content: "✅ เพิ่มเรียบร้อย", ephemeral: true });
-  }
-
-  // ===== RR REMOVE =====
-  if (i.commandName === "rr" && i.options.getSubcommand() === "remove") {
-    const emoji = i.options.getString("emoji");
-    const role = i.options.getRole("role");
-
-    let data = Object.values(db).find(d => d.channelId === i.channel.id);
-    if (!data || data.roles[emoji] !== role.id) {
-      return i.reply({ content: "❌ อิโมจิหรือยศไม่ตรง", ephemeral: true });
-    }
-
-    delete data.roles[emoji];
-    saveDB(db);
-
-    const msg = await i.channel.messages.fetch(data.messageId);
-    await msg.edit({ embeds: [buildRRMessage(data)] });
-
-    const react = msg.reactions.cache.find(r => r.emoji.toString() === emoji);
-    if (react) await react.remove().catch(() => {});
-
-    return i.reply({ content: "🗑️ ลบเรียบร้อย", ephemeral: true });
-  }
-
-  // ===== RR LIST =====
-  if (i.commandName === "rr" && i.options.getSubcommand() === "list") {
+  if (i.options.getSubcommand() === "list") {
     const members = await i.guild.members.fetch();
     const embed = new EmbedBuilder()
       .setColor(0x87cefa)
@@ -255,107 +207,13 @@ ${thaiPeriod(d)}`,
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("rr_refresh")
-        .setEmoji("<a:emoji_33:1450155386786152468>")
+        .setEmoji("<a:emoji_34:1450185227577196780>")
         .setLabel("รีเฟรช")
         .setStyle(ButtonStyle.Primary)
     );
 
     return i.reply({ embeds: [embed], components: [row] });
   }
-});
-
-// ================== BUTTON ==================
-client.on("interactionCreate", async (i) => {
-  if (!i.isButton()) return;
-  if (i.customId !== "rr_refresh") return;
-
-  const db = loadDB();
-  const members = await i.guild.members.fetch();
-
-  const embed = new EmbedBuilder()
-    .setColor(0x87cefa)
-    .setTitle("📋 Panel : รายชื่อสมาชิกที่ถือยศ (อัปเดต)");
-
-  members.forEach(m => {
-    if (m.user.bot) return;
-
-    let info;
-    for (const d of Object.values(db)) {
-      if (d.users?.[m.id]) info = d.users[m.id];
-    }
-
-    if (!info) {
-      embed.addFields({
-        name: `🧑‍🧒‍🧒 ผู้ใข้ : <@${m.id}>`,
-        value: "🎐 ยศตกแต่ง : ยังไม่มียศ",
-        inline: false
-      });
-    } else {
-      const d = new Date(info.time);
-      embed.addFields({
-        name: `🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
-        value:
-`🎐 ยศตกแต่ว : ${info.emoji} ➜ <@&${info.roleId}>
-📅 วันที่ : ${thaiDate(d)}
-⏰ เวลา : ${thaiTime(d)}
-${thaiPeriod(d)}`,
-        inline: false
-      });
-    }
-  });
-
-  await i.update({ embeds: [embed] });
-});
-
-// ================== REACTION ADD ==================
-client.on("messageReactionAdd", async (reaction, user) => {
-  if (user.bot) return;
-  if (reaction.partial) await reaction.fetch();
-
-  const db = loadDB();
-  const data = db[reaction.message.id];
-  if (!data) return;
-
-  const emoji = reaction.emoji.toString();
-  const roleId = data.roles[emoji];
-  if (!roleId) return;
-
-  const member = await reaction.message.guild.members.fetch(user.id);
-
-  if (data.users[user.id]) {
-    await reaction.users.remove(user.id).catch(() => {});
-    await user.send(
-`💌 แจ้งเตือนจาก ${SERVER_NAME}
-${SERVER_INVITE}
-
-> - คุณต้องกดอิโมจิเดิมเพื่อลบยศก่อน
-> - แล้วค่อยเลือกยศใหม่ได้นะคะ 💖`
-    ).catch(() => {});
-    return;
-  }
-  await member.roles.add(roleId).catch(() => {});
-  data.users[user.id] = {
-    userId: user.id,
-    roleId,
-    emoji,
-    time: Date.now()
-  };
-  saveDB(db);
-});
-
-// ================== REACTION REMOVE ==================
-client.on("messageReactionRemove", async (reaction, user) => {
-  if (user.bot) return;
-  if (reaction.partial) await reaction.fetch();
-
-  const db = loadDB();
-  const data = db[reaction.message.id];
-  if (!data || !data.users[user.id]) return;
-
-  const member = await reaction.message.guild.members.fetch(user.id);
-  await member.roles.remove(data.users[user.id].roleId).catch(() => {});
-  delete data.users[user.id];
-  saveDB(db);
 });
 
 client.login(config.TOKEN);
