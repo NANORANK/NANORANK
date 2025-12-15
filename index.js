@@ -4,12 +4,18 @@ const {
   Partials,
   SlashCommandBuilder,
   REST,
-  Routes
+  Routes,
+  EmbedBuilder,
+  ActivityType
 } = require("discord.js");
 
+const { joinVoiceChannel } = require("@discordjs/voice");
 const fs = require("fs");
 const express = require("express");
 const config = require("./config");
+
+// ===== CONFIG =====
+const AUTO_VOICE_CHANNEL_ID = "1449137022244491304";
 
 // ===== Keep Alive =====
 const app = express();
@@ -28,7 +34,8 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMessageReactions
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildVoiceStates
   ],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
@@ -52,11 +59,35 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(config.TOKEN);
 
+// ===== Ready =====
 client.once("ready", async () => {
   await rest.put(
     Routes.applicationCommands(config.CLIENT_ID),
     { body: commands }
   );
+
+  // Custom Status
+  client.user.setPresence({
+    activities: [
+      {
+        name: "ทำงานให้ หัวหน้า ซีม่อน <a:emoji_2:1449148118690959440>",
+        type: ActivityType.Custom
+      }
+    ],
+    status: "online"
+  });
+
+  // Auto join voice
+  const channel = await client.channels.fetch(AUTO_VOICE_CHANNEL_ID).catch(() => null);
+  if (channel) {
+    joinVoiceChannel({
+      channelId: channel.id,
+      guildId: channel.guild.id,
+      adapterCreator: channel.guild.voiceAdapterCreator,
+      selfDeaf: false
+    });
+  }
+
   console.log("Bot ready");
 });
 
@@ -76,18 +107,21 @@ client.on("interactionCreate", async (i) => {
 
   const db = loadDB();
 
-  // 1 ห้อง = 1 ข้อความ reaction role
   let data = Object.values(db).find(d => d.channelId === i.channel.id);
   let message;
 
   if (!data) {
-    message = await i.channel.send("🎭 กดอิโมจิรับยศ (กำลังตั้งค่า...)");
+    const embed = new EmbedBuilder()
+      .setColor(0xffc0cb)
+      .setDescription("🎭 กดอิโมจิรับยศ (กำลังตั้งค่า...)");
+
+    message = await i.channel.send({ embeds: [embed] });
+
     data = {
       messageId: message.id,
       channelId: i.channel.id,
       roles: {},
-      users: {},
-      roleOwners: {}
+      users: {}
     };
     db[message.id] = data;
   } else {
@@ -99,21 +133,25 @@ client.on("interactionCreate", async (i) => {
 
   await message.react(emoji);
 
-  // ===== Build Message Text =====
-  let text =
+  // ===== Build Embed =====
+  let desc =
 `🎭 กดอิโมจิรับยศ (1 คน / 1 ยศ)
 
 ╭┈ ✧ : รับยศตกแต่ง ˗ˏˋ꒰ 🍒 ꒱
 `;
 
   for (const [em, r] of Object.entries(data.roles)) {
-    text += ` | ${em}・<@&${r}>\n`;
+    desc += ` | ${em}・<@&${r}>\n`;
   }
 
-  text +=
-`╰ ┈ ✧ : จะเลือกยศใหม่ กดอิโมจิเดิมก่อนนะคะ ┆ • ➵ BY Zemon Źx`;
+  desc +=
+`╰ ┈ ✧ : กดอิโมจิถอนยศก่อนนะคะ ┆ • ➵ BY Zemon Źx 🦄`;
 
-  await message.edit(text);
+  const embed = new EmbedBuilder()
+    .setColor(0xffc0cb)
+    .setDescription(desc);
+
+  await message.edit({ embeds: [embed] });
 
   await i.reply({ content: "✅ เพิ่ม Reaction Role แล้ว", ephemeral: true });
 });
@@ -133,27 +171,21 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
   const member = await reaction.message.guild.members.fetch(user.id);
 
+  // ❌ มี role อยู่แล้ว
   if (data.users[user.id]) {
-    reaction.users.remove(user.id).catch(() => {});
-    user.send(
-      `❌ คุณได้รับยศ <@&${data.users[user.id]}> แล้ว\n` +
-      `กรุณากดอิโมจิเดิมเพื่อถอนยศก่อน แล้วเลือกใหม่`
-    ).then(m => setTimeout(() => m.delete().catch(() => {}), 10000))
-     .catch(() => {});
+    await reaction.users.remove(user.id).catch(() => {});
+
+    const warn = await reaction.message.channel.send(
+      `<@${user.id}> คุณได้รับยศ <@&${data.users[user.id]}> ไปแล้ว\nกรุณากดอิโมจิเดิมเพื่อถอนยศ และเลือกใหม่คะ`
+    );
+
+    setTimeout(() => warn.delete().catch(() => {}), 5000);
     return;
   }
 
-  if (data.roleOwners[roleId]) {
-    reaction.users.remove(user.id).catch(() => {});
-    user.send("❌ ยศนี้มีคนเลือกไปแล้ว")
-      .then(m => setTimeout(() => m.delete().catch(() => {}), 10000))
-      .catch(() => {});
-    return;
-  }
-
+  // ✅ ให้ยศ
   await member.roles.add(roleId).catch(() => {});
   data.users[user.id] = roleId;
-  data.roleOwners[roleId] = user.id;
   saveDB(db);
 });
 
@@ -176,8 +208,7 @@ client.on("messageReactionRemove", async (reaction, user) => {
   await member.roles.remove(roleId).catch(() => {});
 
   delete data.users[user.id];
-  delete data.roleOwners[roleId];
   saveDB(db);
 });
 
-client.login(config.TOKEN);
+client.login(config.TOKEN)
