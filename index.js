@@ -13,77 +13,103 @@ const {
   ButtonStyle
 } = require("discord.js");
 
+const { joinVoiceChannel } = require("@discordjs/voice");
 const fs = require("fs");
 const express = require("express");
 const config = require("./config");
 
-// ===== SERVER INFO =====
+// ================== BASIC ==================
 const SERVER_NAME = "xSwift Hub";
 const SERVER_INVITE = "https://discord.gg/AYby9ypmyy";
+const DB_PATH = "./reactionRoles.json";
 
-// ===== Keep Alive =====
+// ================== KEEP ALIVE ==================
 const app = express();
-app.get("/", (_, res) => res.send("Bot is alive"));
+app.get("/", (_, res) => res.send("Bot alive"));
 app.listen(8080);
 
-// ===== JSON DB =====
-const DB_PATH = "./reactionRoles.json";
-const loadDB = () => JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+// ================== DB ==================
+const loadDB = () =>
+  fs.existsSync(DB_PATH)
+    ? JSON.parse(fs.readFileSync(DB_PATH, "utf8"))
+    : {};
+
 const saveDB = (data) =>
   fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
 
-// ===== Utils =====
-function getPeriod(date) {
-  const h = date.getHours() + date.getMinutes() / 60;
-  if (h >= 6 && h <= 11.5) return "☀️ เช้า";
-  if (h >= 12 && h <= 15.5) return "🌤️ กลางวัน";
-  if (h >= 16 && h <= 18.5) return "🌇 เย็น";
-  return "🌙 มืด";
-}
+// ================== TIME (TH) ==================
+const tz = config.TIMEZONE || "Asia/Bangkok";
 
-function formatThaiDate(date) {
-  return date.toLocaleDateString("th-TH", {
+const thaiDate = (d) =>
+  new Intl.DateTimeFormat("th-TH", {
+    timeZone: tz,
     year: "numeric",
     month: "long",
     day: "numeric"
-  });
-}
+  }).format(d);
 
+const thaiTime = (d) =>
+  new Intl.DateTimeFormat("th-TH", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(d);
+
+const thaiPeriod = (d) => {
+  const h = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour: "2-digit",
+      hour12: false
+    }).format(d)
+  );
+  if (h >= 6 && h < 12) return "☀️ เช้า";
+  if (h >= 12 && h < 16) return "🌤️ กลางวัน";
+  if (h >= 16 && h < 19) return "🌇 เย็น";
+  return "🌙 มืด";
+};
+
+// ================== RR EMBED ==================
 function buildRRMessage(data) {
   let desc =
 `🎭 กดอิโมจิรับยศ (1 คน / 1 ยศ)
 
 ╭┈ ✧ : รับยศตกแต่ง ˗ˏˋ꒰ 🍒 ꒱
 `;
-  for (const [em, r] of Object.entries(data.roles)) {
-    desc += ` | ${em}・<@&${r}>\n`;
+
+  for (const [emoji, roleId] of Object.entries(data.roles)) {
+    desc += ` | ${emoji}・<@&${roleId}>\n`;
   }
+
   desc +=
 `╰ ┈ ✧ : จะเลือกยศใหม่ กดอิโมจิเดิมก่อนนะคะ ┆ • ➵ BY Zemon Źx`;
-  return new EmbedBuilder().setColor(0xffc0cb).setDescription(desc);
+
+  return new EmbedBuilder()
+    .setColor(0xffc0cb)
+    .setDescription(desc);
 }
 
-// ===== Discord Client =====
+// ================== CLIENT ==================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildVoiceStates
   ],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
-// ===== Slash Commands =====
+// ================== COMMANDS ==================
 const commands = [
   new SlashCommandBuilder()
     .setName("rr")
     .setDescription("Reaction Role System")
     .addSubcommand(s =>
-      s.setName("create")
-        .setDescription("เพิ่มอิโมจิรับยศ")
+      s.setName("add")
+        .setDescription("เพิ่มอิโมจิ + ยศ (อัปเดตข้อความเดิม)")
         .addStringOption(o =>
           o.setName("emoji").setDescription("อิโมจิ").setRequired(true)
         )
@@ -93,7 +119,7 @@ const commands = [
     )
     .addSubcommand(s =>
       s.setName("remove")
-        .setDescription("ลบอิโมจิรับยศ (แก้ไขข้อความเดิม)")
+        .setDescription("ลบอิโมจิ + ยศ (แก้ข้อความเดิม)")
         .addStringOption(o =>
           o.setName("emoji").setDescription("อิโมจิ").setRequired(true)
         )
@@ -105,9 +131,10 @@ const commands = [
       s.setName("list")
         .setDescription("เปิด Panel รายชื่อสมาชิกที่ถือยศ")
     ),
+
   new SlashCommandBuilder()
     .setName("joinvc")
-    .setDescription("สั่งให้บอทเข้า Voice Channel (เฉพาะเจ้าของเซิฟ)")
+    .setDescription("ให้บอทเข้าห้องเสียง")
     .addChannelOption(o =>
       o.setName("channel")
         .setDescription("ช่องเสียง")
@@ -118,199 +145,182 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(config.TOKEN);
 
-// ===== Status Rotation =====
-const statuses = [
-  "🟢 ทำงานให้ ซีม่อน อยู่ คะ",
-  "💔 เหงาจับใจ",
-  "💖 รัก ซีม่อน",
-  "🥺 มีแค่เธอนะ เบบี๋",
-  "👻 เรากลัวผีนะ"
-];
-let statusIndex = 0;
-
-// ===== Ready =====
+// ================== READY ==================
 client.once("ready", async () => {
-  await rest.put(Routes.applicationCommands(config.CLIENT_ID), { body: commands });
-
-  setInterval(() => {
-    client.user.setPresence({
-      activities: [{ name: statuses[statusIndex], type: ActivityType.Custom }],
-      status: "online"
-    });
-    statusIndex = (statusIndex + 1) % statuses.length;
-  }, 2500);
-
+  await rest.put(
+    Routes.applicationCommands(config.CLIENT_ID),
+    { body: commands }
+  );
   console.log("Bot ready");
 });
 
-// ===== Interaction Logic =====
+// ================== INTERACTION ==================
 client.on("interactionCreate", async (i) => {
-  if (i.isChatInputCommand()) {
-    if (i.guild.ownerId !== i.user.id) {
-      return i.reply({ content: "❌ ใช้ได้เฉพาะเจ้าของเซิฟ", ephemeral: true });
-    }
+  if (!i.isChatInputCommand()) return;
 
-    const db = loadDB();
-
-    // ===== /rr create =====
-    if (i.commandName === "rr" && i.options.getSubcommand() === "create") {
-      const emoji = i.options.getString("emoji");
-      const role = i.options.getRole("role");
-
-      let data = Object.values(db).find(d => d.channelId === i.channel.id);
-      let message;
-
-      if (!data) {
-        message = await i.channel.send({ embeds: [buildRRMessage({ roles: {} })] });
-        data = { messageId: message.id, channelId: i.channel.id, roles: {}, users: {} };
-        db[message.id] = data;
-      } else {
-        message = await i.channel.messages.fetch(data.messageId);
-      }
-
-      data.roles[emoji] = role.id;
-      saveDB(db);
-      await message.react(emoji);
-      await message.edit({ embeds: [buildRRMessage(data)] });
-
-      return i.reply({ content: "✅ เพิ่มเรียบร้อย", ephemeral: true });
-    }
-
-    // ===== /rr remove =====
-    if (i.commandName === "rr" && i.options.getSubcommand() === "remove") {
-      const emoji = i.options.getString("emoji");
-      const role = i.options.getRole("role");
-
-      let data = Object.values(db).find(d => d.channelId === i.channel.id);
-      if (!data || data.roles[emoji] !== role.id) {
-        return i.reply({ content: "❌ อิโมจิหรือยศไม่ตรงกับข้อความ", ephemeral: true });
-      }
-
-      delete data.roles[emoji];
-      saveDB(db);
-
-      const msg = await i.channel.messages.fetch(data.messageId);
-      await msg.edit({ embeds: [buildRRMessage(data)] });
-
-      // ลบ reaction ออกจากข้อความ
-      const reaction = msg.reactions.cache.find(r => r.emoji.toString() === emoji);
-      if (reaction) await reaction.remove().catch(() => {});
-
-      return i.reply({ content: "🗑️ ลบและอัปเดตข้อความเรียบร้อย", ephemeral: true });
-    }
-
-    // ===== /rr list =====
-    if (i.commandName === "rr" && i.options.getSubcommand() === "list") {
-      const members = await i.guild.members.fetch();
-      const dbAll = loadDB();
-
-      const embed = new EmbedBuilder()
-        .setColor(0x87cefa)
-        .setTitle("📋 Panel : รายชื่อสมาชิกที่ถือยศ")
-        .setDescription("กดปุ่ม **รีเซ็ต** เพื่ออัปเดตข้อมูลแบบเรียลไทม์");
-
-      members.forEach(m => {
-        if (m.user.bot) return;
-
-        let found;
-        for (const d of Object.values(dbAll)) {
-          if (d.users[m.id]) found = d.users[m.id];
-        }
-
-        if (!found) {
-          embed.addFields({
-            name: `🧑‍🧒‍🧒 ${m.user.tag}`,
-            value: "ยศที่ถือ : สมาชิกนี้ยังไม่มียศ",
-            inline: false
-          });
-        } else {
-          const date = new Date(found.time);
-          embed.addFields({
-            name: `🧑‍🧒‍🧒 ${m.user.tag}`,
-            value:
-`ยศที่ถือ : ${found.emoji}
-📅 วันที่ ${formatThaiDate(date)}
-⏰ เวลา ${date.toLocaleTimeString("th-TH")}
-${getPeriod(date)}`,
-            inline: false
-          });
-        }
-      });
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("rr_refresh")
-          .setLabel("🔄 รีเซ็ต")
-          .setStyle(ButtonStyle.Primary)
-      );
-
-      return i.reply({ embeds: [embed], components: [row], ephemeral: true });
-    }
-
-    // ===== /joinvc =====
-    if (i.commandName === "joinvc") {
-      let joinVoiceChannel;
-      try {
-        ({ joinVoiceChannel } = require("@discordjs/voice"));
-      } catch {
-        return i.reply({ content: "❌ Voice ไม่พร้อมบนโฮสต์นี้", ephemeral: true });
-      }
-
-      const channel = i.options.getChannel("channel");
-      joinVoiceChannel({
-        channelId: channel.id,
-        guildId: channel.guild.id,
-        adapterCreator: channel.guild.voiceAdapterCreator,
-        selfDeaf: false
-      });
-
-      return i.reply({ content: `✅ เข้าห้องเสียง ${channel}`, ephemeral: true });
-    }
+  // owner only
+  if (i.guild.ownerId !== i.user.id) {
+    return i.reply({ content: "❌ เฉพาะเจ้าของเซิฟนะค้าบ", ephemeral: true });
   }
 
-  // ===== Button Interaction =====
-  if (i.isButton() && i.customId === "rr_refresh") {
-    const guild = i.guild;
-    const members = await guild.members.fetch();
-    const dbAll = loadDB();
+  const db = loadDB();
 
+  // ===== RR ADD =====
+  if (i.commandName === "rr" && i.options.getSubcommand() === "add") {
+    const emoji = i.options.getString("emoji");
+    const role = i.options.getRole("role");
+
+    let data = Object.values(db).find(d => d.channelId === i.channel.id);
+    let msg;
+
+    if (!data) {
+      msg = await i.channel.send({ embeds: [buildRRMessage({ roles: {} })] });
+      data = {
+        channelId: i.channel.id,
+        messageId: msg.id,
+        roles: {},
+        users: {}
+      };
+      db[msg.id] = data;
+    } else {
+      msg = await i.channel.messages.fetch(data.messageId);
+    }
+
+    data.roles[emoji] = role.id;
+    saveDB(db);
+
+    await msg.react(emoji).catch(() => {});
+    await msg.edit({ embeds: [buildRRMessage(data)] });
+
+    return i.reply({ content: "✅ เพิ่มและอัปเดตข้อความเรียบร้อย", ephemeral: true });
+  }
+
+  // ===== RR REMOVE =====
+  if (i.commandName === "rr" && i.options.getSubcommand() === "remove") {
+    const emoji = i.options.getString("emoji");
+    const role = i.options.getRole("role");
+
+    let data = Object.values(db).find(d => d.channelId === i.channel.id);
+    if (!data || data.roles[emoji] !== role.id) {
+      return i.reply({ content: "❌ อิโมจิหรือยศไม่ตรง", ephemeral: true });
+    }
+
+    delete data.roles[emoji];
+    saveDB(db);
+
+    const msg = await i.channel.messages.fetch(data.messageId);
+    await msg.edit({ embeds: [buildRRMessage(data)] });
+
+    const react = msg.reactions.cache.find(r => r.emoji.toString() === emoji);
+    if (react) await react.remove().catch(() => {});
+
+    return i.reply({ content: "🗑️ ลบและอัปเดตข้อความแล้ว", ephemeral: true });
+  }
+
+  // ===== RR LIST =====
+  if (i.commandName === "rr" && i.options.getSubcommand() === "list") {
+    const members = await i.guild.members.fetch();
     const embed = new EmbedBuilder()
       .setColor(0x87cefa)
-      .setTitle("📋 Panel : รายชื่อสมาชิกที่ถือยศ (อัปเดตแล้ว)");
+      .setTitle("📋 Panel : รายชื่อสมาชิกที่ถือยศ");
 
     members.forEach(m => {
       if (m.user.bot) return;
 
-      let found;
-      for (const d of Object.values(dbAll)) {
-        if (d.users[m.id]) found = d.users[m.id];
+      let info;
+      for (const d of Object.values(db)) {
+        if (d.users?.[m.id]) info = d.users[m.id];
       }
 
-      if (!found) {
+      if (!info) {
         embed.addFields({
-          name: `🧑‍🧒‍🧒 ${m.user.tag}`,
-          value: "ยศที่ถือ : สมาชิกนี้ยังไม่มียศ",
+          name: `🧑‍🧒‍🧒 <@${m.id}>`,
+          value: "ยศที่ถือ : ยังไม่มียศ",
           inline: false
         });
       } else {
-        const date = new Date(found.time);
+        const d = new Date(info.time);
         embed.addFields({
-          name: `🧑‍🧒‍🧒 ${m.user.tag}`,
+          name: `🧑‍🧒‍🧒 <@${m.id}>`,
           value:
-`ยศที่ถือ : ${found.emoji}
-📅 วันที่ ${formatThaiDate(date)}
-⏰ เวลา ${date.toLocaleTimeString("th-TH")}
-${getPeriod(date)}`,
+`ยศที่ถือ : ${info.emoji} ➜ <@&${info.roleId}>
+📅 ${thaiDate(d)}
+⏰ ${thaiTime(d)}
+${thaiPeriod(d)}`,
           inline: false
         });
       }
     });
 
-    return i.update({ embeds: [embed] });
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("rr_refresh")
+        .setLabel("🔄 รีเฟรช")
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    return i.reply({ embeds: [embed], components: [row] });
+  }
+
+  // ===== JOIN VC =====
+  if (i.commandName === "joinvc") {
+    const channel = i.options.getChannel("channel");
+
+    joinVoiceChannel({
+      channelId: channel.id,
+      guildId: channel.guild.id,
+      adapterCreator: channel.guild.voiceAdapterCreator,
+      selfDeaf: false
+    });
+
+    return i.reply({ content: `🎧 บอทเข้าห้อง ${channel} แล้วค้าบ` });
   }
 });
 
-// ===== Reaction Add =====
+// ================== BUTTON ==================
+client.on("interactionCreate", async (i) => {
+  if (!i.isButton()) return;
+  if (i.customId !== "rr_refresh") return;
+
+  const db = loadDB();
+  const members = await i.guild.members.fetch();
+
+  const embed = new EmbedBuilder()
+    .setColor(0x87cefa)
+    .setTitle("📋 Panel : รายชื่อสมาชิกที่ถือยศ (อัปเดต)");
+
+  members.forEach(m => {
+    if (m.user.bot) return;
+
+    let info;
+    for (const d of Object.values(db)) {
+      if (d.users?.[m.id]) info = d.users[m.id];
+    }
+
+    if (!info) {
+      embed.addFields({
+        name: `🧑‍🧒‍🧒 <@${m.id}>`,
+        value: "ยศที่ถือ : ยังไม่มียศ",
+        inline: false
+      });
+    } else {
+      const d = new Date(info.time);
+      embed.addFields({
+        name: `🧑‍🧒‍🧒 <@${m.id}>`,
+        value:
+`ยศที่ถือ : ${info.emoji} ➜ <@&${info.roleId}>
+📅 ${thaiDate(d)}
+⏰ ${thaiTime(d)}
+${thaiPeriod(d)}`,
+        inline: false
+      });
+    }
+  });
+
+  await i.update({ embeds: [embed] });
+});
+
+// ================== REACTION ADD ==================
 client.on("messageReactionAdd", async (reaction, user) => {
   if (user.bot) return;
   if (reaction.partial) await reaction.fetch();
@@ -319,38 +329,38 @@ client.on("messageReactionAdd", async (reaction, user) => {
   const data = db[reaction.message.id];
   if (!data) return;
 
-  const emojiKey = reaction.emoji.toString();
-  const roleId = data.roles[emojiKey];
+  const emoji = reaction.emoji.toString();
+  const roleId = data.roles[emoji];
   if (!roleId) return;
 
   const member = await reaction.message.guild.members.fetch(user.id);
 
+  // already has role
   if (data.users[user.id]) {
     await reaction.users.remove(user.id).catch(() => {});
-    await user.send({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0xffb6c1)
-          .setDescription(
-`💌 แจ้งเตือนจากเซิฟเวอร์
-${SERVER_NAME}
+    await user.send(
+`💌 แจ้งเตือนจาก ${SERVER_NAME}
 ${SERVER_INVITE}
 
-สวัสดี <@${user.id}> ✨
-กรุณากดอิโมจิ “อันเดิม” เพื่อถอนยศก่อน
-แล้วค่อยกลับมาเลือกยศใหม่ได้นะคะ 💖`
-          )
-      ]
-    }).catch(() => {});
+คุณต้องกดอิโมจิเดิมเพื่อลบยศก่อน
+แล้วค่อยเลือกยศใหม่ได้นะคะ 💖`
+    ).catch(() => {});
     return;
   }
 
   await member.roles.add(roleId).catch(() => {});
-  data.users[user.id] = { roleId, emoji: emojiKey, time: Date.now() };
+  data.users[user.id] = {
+    userId: user.id,
+    roleId,
+    emoji,
+    channelId: reaction.message.channel.id,
+    messageId: reaction.message.id,
+    time: Date.now()
+  };
   saveDB(db);
 });
 
-// ===== Reaction Remove =====
+// ================== REACTION REMOVE ==================
 client.on("messageReactionRemove", async (reaction, user) => {
   if (user.bot) return;
   if (reaction.partial) await reaction.fetch();
