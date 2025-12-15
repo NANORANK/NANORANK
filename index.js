@@ -54,7 +54,7 @@ const thaiTime = d =>
     hour12: false
   }).format(d);
 
-// ✅ เพิ่มระบบช่วงเวลา (ADD ONLY)
+// ✅ ADD ONLY : ช่วงเวลา
 const thaiPeriod = d => {
   const h = Number(
     new Intl.DateTimeFormat("en-US", {
@@ -167,6 +167,21 @@ client.once("ready", async () => {
   console.log("Bot ready");
 });
 
+// ================== ADD ONLY : helper รวมทุก channel ==================
+function getUserAllRoles(db, userId) {
+  const result = [];
+  for (const d of Object.values(db)) {
+    if (!d.users || !d.users[userId]) continue;
+
+    result.push({
+      channelId: d.channelId,
+      messageId: d.messageId,
+      ...d.users[userId]
+    });
+  }
+  return result;
+}
+
 // ================== INTERACTION ==================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
@@ -233,27 +248,27 @@ client.on("interactionCreate", async (i) => {
     members.forEach(m => {
       if (m.user.bot) return;
 
-      let info;
-      for (const d of Object.values(db)) {
-        if (d.users?.[m.id]) info = d.users[m.id];
-      }
+      const infos = getUserAllRoles(db, m.id);
 
-      if (!info) {
+      if (infos.length === 0) {
         embed.addFields({
           name: ` > - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
           value: " > - 🎐 ยศตกแต่ง : ยังไม่มียศ",
           inline: false
         });
       } else {
-        const d = new Date(info.time);
-        embed.addFields({
-          name: ` > - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
-          value:
-` > - 🎐 ยศตกแต่ง : ${info.emoji} ➜ <@&${info.roleId}>
+        infos.forEach(info => {
+          const d = new Date(info.time);
+          embed.addFields({
+            name: ` > - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
+            value:
+` > - 📍 ช่อง : <#${info.channelId}>
+> - 🎐 ยศตกแต่ง : ${info.emoji} ➜ <@&${info.roleId}>
 > - 📅 วันที่ : ${thaiDate(d)}
 > - ⏰ เวลา : ${thaiTime(d)}
 > - 🕰️ ช่วงเวลา : ${thaiPeriod(d)}`,
-          inline: false
+            inline: false
+          });
         });
       }
     });
@@ -285,27 +300,27 @@ client.on("interactionCreate", async (i) => {
   members.forEach(m => {
     if (m.user.bot) return;
 
-    let info;
-    for (const d of Object.values(db)) {
-      if (d.users?.[m.id]) info = d.users[m.id];
-    }
+    const infos = getUserAllRoles(db, m.id);
 
-    if (!info) {
+    if (infos.length === 0) {
       embed.addFields({
         name: ` > - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
         value: " > - 🎐 ยศตกแต่ง : ยังไม่มียศ",
         inline: false
       });
     } else {
-      const d = new Date(info.time);
-      embed.addFields({
-        name: ` > - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
-        value:
-` > - 🎐 ยศตกแต่ง : ${info.emoji} ➜ <@&${info.roleId}>
+      infos.forEach(info => {
+        const d = new Date(info.time);
+        embed.addFields({
+          name: ` > - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
+          value:
+` > - 📍 ช่อง : <#${info.channelId}>
+> - 🎐 ยศตกแต่ง : ${info.emoji} ➜ <@&${info.roleId}>
 > - 📅 วันที่ : ${thaiDate(d)}
 > - ⏰ เวลา : ${thaiTime(d)}
 > - 🕰️ ช่วงเวลา : ${thaiPeriod(d)}`,
-        inline: false
+          inline: false
+        });
       });
     }
   });
@@ -313,7 +328,7 @@ client.on("interactionCreate", async (i) => {
   await i.update({ embeds: [embed] });
 });
 
-// ================== REACTION ADD (LOCK) ==================
+// ================== REACTION ADD ==================
 client.on("messageReactionAdd", async (reaction, user) => {
   if (user.bot) return;
   if (reaction.partial) await reaction.fetch();
@@ -323,7 +338,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
   if (!data) return;
 
   const emoji = reaction.emoji.toString();
-
   if (!data.roles[emoji]) {
     await reaction.users.remove(user.id).catch(() => {});
     return;
