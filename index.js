@@ -9,8 +9,7 @@ const {
   ActivityType,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle,
-  InteractionResponseFlags
+  ButtonStyle
 } = require("discord.js");
 
 const fs = require("fs");
@@ -135,7 +134,7 @@ const statuses = [
 let statusIndex = 0;
 
 // ================== READY ==================
-client.once("clientReady", async () => {
+client.once("ready", async () => {
   await rest.put(
     Routes.applicationCommands(config.CLIENT_ID),
     { body: commands }
@@ -152,7 +151,7 @@ client.once("clientReady", async () => {
   console.log("Bot ready");
 });
 
-// ================== INTERACTION (RR) ==================
+// ================== INTERACTION ==================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
   if (i.commandName !== "rr") return;
@@ -160,9 +159,8 @@ client.on("interactionCreate", async (i) => {
   const db = loadDB();
   const sub = i.options.getSubcommand();
 
-  // ===== ADD =====
   if (sub === "add") {
-    await i.deferReply({ flags: InteractionResponseFlags.Ephemeral });
+    await i.deferReply({ ephemeral: true });
 
     const emoji = i.options.getString("emoji");
     const role = i.options.getRole("role");
@@ -187,9 +185,8 @@ client.on("interactionCreate", async (i) => {
     return i.editReply("✅ เพิ่มเรียบร้อย");
   }
 
-  // ===== REMOVE =====
   if (sub === "remove") {
-    await i.deferReply({ flags: InteractionResponseFlags.Ephemeral });
+    await i.deferReply({ ephemeral: true });
 
     const emoji = i.options.getString("emoji");
     const role = i.options.getRole("role");
@@ -211,7 +208,6 @@ client.on("interactionCreate", async (i) => {
     return i.editReply("🗑️ ลบเรียบร้อย");
   }
 
-  // ===== LIST =====
   if (sub === "list") {
     const members = await i.guild.members.fetch();
     const embed = new EmbedBuilder()
@@ -257,7 +253,7 @@ client.on("interactionCreate", async (i) => {
   }
 });
 
-// ================== BUTTON (REFRESH FIX) ==================
+// ================== BUTTON ==================
 client.on("interactionCreate", async (i) => {
   if (!i.isButton()) return;
   if (i.customId !== "rr_refresh") return;
@@ -310,7 +306,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
   const emoji = reaction.emoji.toString();
 
-  // 🔒 LOCK: remove emoji not in system
   if (!data.roles[emoji]) {
     await reaction.users.remove(user.id).catch(() => {});
     return;
