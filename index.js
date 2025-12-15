@@ -35,7 +35,7 @@ const loadDB = () =>
 const saveDB = (data) =>
   fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
 
-// ================== TIME (TH) ==================
+// ================== TIME ==================
 const tz = config.TIMEZONE || "Asia/Bangkok";
 
 const thaiDate = d =>
@@ -53,20 +53,6 @@ const thaiTime = d =>
     minute: "2-digit",
     hour12: false
   }).format(d);
-
-const thaiPeriod = d => {
-  const h = Number(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      hour: "2-digit",
-      hour12: false
-    }).format(d)
-  );
-  if (h >= 6 && h < 12) return " > ☀️ : ตอนเช้า";
-  if (h >= 12 && h < 16) return " > 🌤️ : ตอนกลางวัน";
-  if (h >= 16 && h < 19) return " > 🌇 : ตอนเย็น";
-  return " > 🌙 : ตอนมืด";
-};
 
 // ================== RR EMBED ==================
 function buildRRMessage(data) {
@@ -165,18 +151,18 @@ client.once("ready", async () => {
   console.log("Bot ready");
 });
 
-// ================== INTERACTION (FIXED) ==================
+// ================== INTERACTION ==================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
   if (i.commandName !== "rr") return;
-
-  await i.deferReply({ ephemeral: true });
 
   const db = loadDB();
   const sub = i.options.getSubcommand();
 
   // ===== ADD =====
   if (sub === "add") {
+    await i.deferReply({ ephemeral: true });
+
     const emoji = i.options.getString("emoji");
     const role = i.options.getRole("role");
 
@@ -202,6 +188,8 @@ client.on("interactionCreate", async (i) => {
 
   // ===== REMOVE =====
   if (sub === "remove") {
+    await i.deferReply({ ephemeral: true });
+
     const emoji = i.options.getString("emoji");
     const role = i.options.getRole("role");
 
@@ -250,8 +238,7 @@ client.on("interactionCreate", async (i) => {
           value:
 ` > - 🎐 ยศตกแต่ง : ${info.emoji} ➜ <@&${info.roleId}>
 > - 📅 วันที่ : ${thaiDate(d)}
-> - ⏰ เวลา : ${thaiTime(d)}
-${thaiPeriod(d)}`,
+> - ⏰ เวลา : ${thaiTime(d)}`,
           inline: false
         });
       }
@@ -265,8 +252,61 @@ ${thaiPeriod(d)}`,
         .setStyle(ButtonStyle.Primary)
     );
 
-    return i.editReply({ embeds: [embed], components: [row] });
+    return i.reply({ embeds: [embed], components: [row] });
   }
+});
+
+// ================== REACTION ADD ==================
+client.on("messageReactionAdd", async (reaction, user) => {
+  if (user.bot) return;
+  if (reaction.partial) await reaction.fetch();
+
+  const db = loadDB();
+  const data = db[reaction.message.id];
+  if (!data) return;
+
+  const emoji = reaction.emoji.toString();
+  const roleId = data.roles[emoji];
+  if (!roleId) return;
+
+  const member = await reaction.message.guild.members.fetch(user.id);
+
+  // already has role
+  if (data.users[user.id]) {
+    await reaction.users.remove(user.id).catch(() => {});
+    await user.send(
+`💌 แจ้งเตือนจาก ${SERVER_NAME}
+${SERVER_INVITE}
+
+> - คุณต้องกดอิโมจิเดิมเพื่อลบยศก่อน
+> - แล้วค่อยเลือกยศใหม่ได้นะคะ 💖`
+    ).catch(() => {});
+    return;
+  }
+
+  await member.roles.add(roleId).catch(() => {});
+  data.users[user.id] = {
+    userId: user.id,
+    roleId,
+    emoji,
+    time: Date.now()
+  };
+  saveDB(db);
+});
+
+// ================== REACTION REMOVE ==================
+client.on("messageReactionRemove", async (reaction, user) => {
+  if (user.bot) return;
+  if (reaction.partial) await reaction.fetch();
+
+  const db = loadDB();
+  const data = db[reaction.message.id];
+  if (!data || !data.users[user.id]) return;
+
+  const member = await reaction.message.guild.members.fetch(user.id);
+  await member.roles.remove(data.users[user.id].roleId).catch(() => {});
+  delete data.users[user.id];
+  saveDB(db);
 });
 
 client.login(config.TOKEN);
