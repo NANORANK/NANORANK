@@ -7,13 +7,11 @@ const {
   Routes,
   EmbedBuilder,
   ActivityType,
-  ChannelType,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle
 } = require("discord.js");
 
-const { joinVoiceChannel } = require("@discordjs/voice");
 const fs = require("fs");
 const express = require("express");
 const config = require("./config");
@@ -95,9 +93,7 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.GuildVoiceStates
+    GatewayIntentBits.GuildMessageReactions
   ],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
@@ -109,7 +105,7 @@ const commands = [
     .setDescription("Reaction Role System")
     .addSubcommand(s =>
       s.setName("add")
-        .setDescription("เพิ่มอิโมจิ + ยศ (อัปเดตข้อความเดิม)")
+        .setDescription("เพิ่มอิโมจิ + ยศ")
         .addStringOption(o =>
           o.setName("emoji").setDescription("อิโมจิ").setRequired(true)
         )
@@ -119,7 +115,7 @@ const commands = [
     )
     .addSubcommand(s =>
       s.setName("remove")
-        .setDescription("ลบอิโมจิ + ยศ (แก้ข้อความเดิม)")
+        .setDescription("ลบอิโมจิ + ยศ")
         .addStringOption(o =>
           o.setName("emoji").setDescription("อิโมจิ").setRequired(true)
         )
@@ -130,22 +126,12 @@ const commands = [
     .addSubcommand(s =>
       s.setName("list")
         .setDescription("เปิด Panel รายชื่อสมาชิกที่ถือยศ")
-    ),
-
-  new SlashCommandBuilder()
-    .setName("joinvc")
-    .setDescription("ให้บอทเข้าห้องเสียง")
-    .addChannelOption(o =>
-      o.setName("channel")
-        .setDescription("ช่องเสียง")
-        .addChannelTypes(ChannelType.GuildVoice)
-        .setRequired(true)
     )
 ];
 
 const rest = new REST({ version: "10" }).setToken(config.TOKEN);
 
-// ================== CUSTOM STATUS (5 ข้อ) ==================
+// ================== CUSTOM STATUS ==================
 const statuses = [
   "🟢 ทำงานให้ ซีม่อน อยู่ คะ",
   "💔 เหงาจับใจ",
@@ -162,15 +148,9 @@ client.once("ready", async () => {
     { body: commands }
   );
 
-  // rotate status ทุก 2.5 วิ
   setInterval(() => {
     client.user.setPresence({
-      activities: [
-        {
-          name: statuses[statusIndex],
-          type: ActivityType.Custom
-        }
-      ],
+      activities: [{ name: statuses[statusIndex], type: ActivityType.Custom }],
       status: "online"
     });
     statusIndex = (statusIndex + 1) % statuses.length;
@@ -211,7 +191,7 @@ client.on("interactionCreate", async (i) => {
     await msg.react(emoji).catch(() => {});
     await msg.edit({ embeds: [buildRRMessage(data)] });
 
-    return i.reply({ content: "✅ เพิ่มและอัปเดตข้อความเรียบร้อย", ephemeral: true });
+    return i.reply({ content: "✅ เพิ่มเรียบร้อย", ephemeral: true });
   }
 
   // ===== RR REMOVE =====
@@ -233,7 +213,7 @@ client.on("interactionCreate", async (i) => {
     const react = msg.reactions.cache.find(r => r.emoji.toString() === emoji);
     if (react) await react.remove().catch(() => {});
 
-    return i.reply({ content: "🗑️ ลบและอัปเดตข้อความแล้ว", ephemeral: true });
+    return i.reply({ content: "🗑️ ลบเรียบร้อย", ephemeral: true });
   }
 
   // ===== RR LIST =====
@@ -274,25 +254,12 @@ ${thaiPeriod(d)}`,
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("rr_refresh")
-        .setLabel("<a:emoji_33:1450155386786152468> รีเฟรช")
+        .setEmoji("<a:emoji_33:1450155386786152468>")
+        .setLabel("รีเฟรช")
         .setStyle(ButtonStyle.Primary)
     );
 
     return i.reply({ embeds: [embed], components: [row] });
-  }
-
-  // ===== JOIN VC =====
-  if (i.commandName === "joinvc") {
-    const channel = i.options.getChannel("channel");
-
-    joinVoiceChannel({
-      channelId: channel.id,
-      guildId: channel.guild.id,
-      adapterCreator: channel.guild.voiceAdapterCreator,
-      selfDeaf: false
-    });
-
-    return i.reply({ content: `🎧 บอทเข้าห้อง ${channel} แล้วค้าบ` });
   }
 });
 
@@ -371,8 +338,6 @@ ${SERVER_INVITE}
     userId: user.id,
     roleId,
     emoji,
-    channelId: reaction.message.channel.id,
-    messageId: reaction.message.id,
     time: Date.now()
   };
   saveDB(db);
