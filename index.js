@@ -7,17 +7,19 @@ const {
   Routes,
   EmbedBuilder,
   ActivityType,
-  ChannelType
+  ChannelType,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require("discord.js");
 
 const fs = require("fs");
 const express = require("express");
 const config = require("./config");
 
-// ===== SERVER INFO (ใช้ใน DM) =====
+// ===== SERVER INFO =====
 const SERVER_NAME = "xSwift Hub";
 const SERVER_INVITE = "https://discord.gg/AYby9ypmyy";
-const SERVER_ID = "1449115718472826957";
 
 // ===== Keep Alive =====
 const app = express();
@@ -29,6 +31,37 @@ const DB_PATH = "./reactionRoles.json";
 const loadDB = () => JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
 const saveDB = (data) =>
   fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+
+// ===== Utils =====
+function getPeriod(date) {
+  const h = date.getHours() + date.getMinutes() / 60;
+  if (h >= 6 && h <= 11.5) return "☀️ เช้า";
+  if (h >= 12 && h <= 15.5) return "🌤️ กลางวัน";
+  if (h >= 16 && h <= 18.5) return "🌇 เย็น";
+  return "🌙 มืด";
+}
+
+function formatThaiDate(date) {
+  return date.toLocaleDateString("th-TH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  });
+}
+
+function buildRRMessage(data) {
+  let desc =
+`🎭 กดอิโมจิรับยศ (1 คน / 1 ยศ)
+
+╭┈ ✧ : รับยศตกแต่ง ˗ˏˋ꒰ 🍒 ꒱
+`;
+  for (const [em, r] of Object.entries(data.roles)) {
+    desc += ` | ${em}・<@&${r}>\n`;
+  }
+  desc +=
+`╰ ┈ ✧ : จะเลือกยศใหม่ กดอิโมจิเดิมก่อนนะคะ ┆ • ➵ BY Zemon Źx`;
+  return new EmbedBuilder().setColor(0xffc0cb).setDescription(desc);
+}
 
 // ===== Discord Client =====
 const client = new Client({
@@ -60,7 +93,7 @@ const commands = [
     )
     .addSubcommand(s =>
       s.setName("remove")
-        .setDescription("ลบอิโมจิรับยศ")
+        .setDescription("ลบอิโมจิรับยศ (แก้ไขข้อความเดิม)")
         .addStringOption(o =>
           o.setName("emoji").setDescription("อิโมจิ").setRequired(true)
         )
@@ -70,7 +103,7 @@ const commands = [
     )
     .addSubcommand(s =>
       s.setName("list")
-        .setDescription("ดูรายชื่อคนที่ถือยศ (เจ้าของเซิฟเท่านั้น)")
+        .setDescription("เปิด Panel รายชื่อสมาชิกที่ถือยศ")
     ),
   new SlashCommandBuilder()
     .setName("joinvc")
@@ -97,10 +130,7 @@ let statusIndex = 0;
 
 // ===== Ready =====
 client.once("ready", async () => {
-  await rest.put(
-    Routes.applicationCommands(config.CLIENT_ID),
-    { body: commands }
-  );
+  await rest.put(Routes.applicationCommands(config.CLIENT_ID), { body: commands });
 
   setInterval(() => {
     client.user.setPresence({
@@ -115,124 +145,168 @@ client.once("ready", async () => {
 
 // ===== Interaction Logic =====
 client.on("interactionCreate", async (i) => {
-  if (!i.isChatInputCommand()) return;
+  if (i.isChatInputCommand()) {
+    if (i.guild.ownerId !== i.user.id) {
+      return i.reply({ content: "❌ ใช้ได้เฉพาะเจ้าของเซิฟ", ephemeral: true });
+    }
 
-  // Owner only
-  if (i.guild.ownerId !== i.user.id) {
-    return i.reply({ content: "❌ ใช้ได้เฉพาะเจ้าของเซิฟ", ephemeral: true });
-  }
+    const db = loadDB();
 
-  const db = loadDB();
+    // ===== /rr create =====
+    if (i.commandName === "rr" && i.options.getSubcommand() === "create") {
+      const emoji = i.options.getString("emoji");
+      const role = i.options.getRole("role");
 
-  // ===== /rr create =====
-  if (i.commandName === "rr" && i.options.getSubcommand() === "create") {
-    const emoji = i.options.getString("emoji");
-    const role = i.options.getRole("role");
+      let data = Object.values(db).find(d => d.channelId === i.channel.id);
+      let message;
 
-    let data = Object.values(db).find(d => d.channelId === i.channel.id);
-    let message;
+      if (!data) {
+        message = await i.channel.send({ embeds: [buildRRMessage({ roles: {} })] });
+        data = { messageId: message.id, channelId: i.channel.id, roles: {}, users: {} };
+        db[message.id] = data;
+      } else {
+        message = await i.channel.messages.fetch(data.messageId);
+      }
 
-    if (!data) {
-      message = await i.channel.send({
-        embeds: [new EmbedBuilder().setColor(0xffc0cb).setDescription("🎭 กดอิโมจิรับยศ")]
+      data.roles[emoji] = role.id;
+      saveDB(db);
+      await message.react(emoji);
+      await message.edit({ embeds: [buildRRMessage(data)] });
+
+      return i.reply({ content: "✅ เพิ่มเรียบร้อย", ephemeral: true });
+    }
+
+    // ===== /rr remove =====
+    if (i.commandName === "rr" && i.options.getSubcommand() === "remove") {
+      const emoji = i.options.getString("emoji");
+      const role = i.options.getRole("role");
+
+      let data = Object.values(db).find(d => d.channelId === i.channel.id);
+      if (!data || data.roles[emoji] !== role.id) {
+        return i.reply({ content: "❌ อิโมจิหรือยศไม่ตรงกับข้อความ", ephemeral: true });
+      }
+
+      delete data.roles[emoji];
+      saveDB(db);
+
+      const msg = await i.channel.messages.fetch(data.messageId);
+      await msg.edit({ embeds: [buildRRMessage(data)] });
+
+      // ลบ reaction ออกจากข้อความ
+      const reaction = msg.reactions.cache.find(r => r.emoji.toString() === emoji);
+      if (reaction) await reaction.remove().catch(() => {});
+
+      return i.reply({ content: "🗑️ ลบและอัปเดตข้อความเรียบร้อย", ephemeral: true });
+    }
+
+    // ===== /rr list =====
+    if (i.commandName === "rr" && i.options.getSubcommand() === "list") {
+      const members = await i.guild.members.fetch();
+      const dbAll = loadDB();
+
+      const embed = new EmbedBuilder()
+        .setColor(0x87cefa)
+        .setTitle("📋 Panel : รายชื่อสมาชิกที่ถือยศ")
+        .setDescription("กดปุ่ม **รีเซ็ต** เพื่ออัปเดตข้อมูลแบบเรียลไทม์");
+
+      members.forEach(m => {
+        if (m.user.bot) return;
+
+        let found;
+        for (const d of Object.values(dbAll)) {
+          if (d.users[m.id]) found = d.users[m.id];
+        }
+
+        if (!found) {
+          embed.addFields({
+            name: `🧑‍🧒‍🧒 ${m.user.tag}`,
+            value: "ยศที่ถือ : สมาชิกนี้ยังไม่มียศ",
+            inline: false
+          });
+        } else {
+          const date = new Date(found.time);
+          embed.addFields({
+            name: `🧑‍🧒‍🧒 ${m.user.tag}`,
+            value:
+`ยศที่ถือ : ${found.emoji}
+📅 วันที่ ${formatThaiDate(date)}
+⏰ เวลา ${date.toLocaleTimeString("th-TH")}
+${getPeriod(date)}`,
+            inline: false
+          });
+        }
       });
 
-      data = {
-        messageId: message.id,
-        channelId: i.channel.id,
-        roles: {},
-        users: {}
-      };
-      db[message.id] = data;
-    } else {
-      message = await i.channel.messages.fetch(data.messageId);
-    }
-
-    data.roles[emoji] = role.id;
-    saveDB(db);
-    await message.react(emoji);
-
-let desc =
-`> - #🎭 กดอิโมจิรับยศ (1 คน / 1 ยศ)
- > - 🎏 ถ้าคุณจะกดอิโมจิมากว่า 1 บอทจะDMคุณไปนะ
-
-╭┈ ✧ : รับยศตกแต่ง ˗ˏˋ꒰ 🍒 ꒱
-`;
-    for (const [em, r] of Object.entries(data.roles)) {
-      desc += ` | ${em}・<@&${r}>\n`;
-    }
-    desc +=
-`╰ ┈ ✧ : จะเลือกยศใหม่ กดอิโมจิเดิมก่อนนะคะ ┆ • ➵ BY Zemon Źx`;
-
-    await message.edit({
-      embeds: [new EmbedBuilder().setColor(0xffc0cb).setDescription(desc)]
-    });
-
-    return i.reply({ content: "✅ เพิ่มเรียบร้อย", ephemeral: true });
-  }
-
-  // ===== /rr remove =====
-  if (i.commandName === "rr" && i.options.getSubcommand() === "remove") {
-    const emoji = i.options.getString("emoji");
-    const role = i.options.getRole("role");
-
-    let data = Object.values(db).find(d => d.channelId === i.channel.id);
-    if (!data || data.roles[emoji] !== role.id) {
-      await i.user.send(
-        `⚠️ แจ้งเตือนจาก ${SERVER_NAME}\n\nไม่พบอิโมจิ ${emoji} กับยศ ${role}\nกรุณาตรวจสอบอีกครั้งนะคะ`
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("rr_refresh")
+          .setLabel("🔄 รีเซ็ต")
+          .setStyle(ButtonStyle.Primary)
       );
-      return i.reply({ content: "❌ ข้อมูลไม่ตรง (ส่ง DM แล้ว)", ephemeral: true });
+
+      return i.reply({ embeds: [embed], components: [row], ephemeral: true });
     }
 
-    delete data.roles[emoji];
-    saveDB(db);
-    return i.reply({ content: "✅ ลบเรียบร้อย", ephemeral: true });
-  }
-
-  // ===== /rr list =====
-  if (i.commandName === "rr" && i.options.getSubcommand() === "list") {
-    let text = "📋 **รายชื่อสมาชิกที่ถือยศ**\n\n";
-
-    for (const data of Object.values(db)) {
-      for (const [userId, info] of Object.entries(data.users)) {
-        const date = new Date(info.time);
-        text +=
-`👤 <@${userId}>
-🎭 ${info.emoji}
-🕒 ${date.toLocaleString("th-TH")}
-
-`;
+    // ===== /joinvc =====
+    if (i.commandName === "joinvc") {
+      let joinVoiceChannel;
+      try {
+        ({ joinVoiceChannel } = require("@discordjs/voice"));
+      } catch {
+        return i.reply({ content: "❌ Voice ไม่พร้อมบนโฮสต์นี้", ephemeral: true });
       }
-    }
 
-    if (text === "📋 **รายชื่อสมาชิกที่ถือยศ**\n\n") {
-      text += "ยังไม่มีใครถือยศเลยนะคะ";
-    }
+      const channel = i.options.getChannel("channel");
+      joinVoiceChannel({
+        channelId: channel.id,
+        guildId: channel.guild.id,
+        adapterCreator: channel.guild.voiceAdapterCreator,
+        selfDeaf: false
+      });
 
-    return i.reply({
-      embeds: [new EmbedBuilder().setColor(0x90ee90).setDescription(text)],
-      ephemeral: true
-    });
+      return i.reply({ content: `✅ เข้าห้องเสียง ${channel}`, ephemeral: true });
+    }
   }
 
-  // ===== /joinvc =====
-  if (i.commandName === "joinvc") {
-    let joinVoiceChannel;
-    try {
-      ({ joinVoiceChannel } = require("@discordjs/voice"));
-    } catch {
-      return i.reply({ content: "❌ ระบบ Voice ไม่พร้อมบนโฮสต์นี้", ephemeral: true });
-    }
+  // ===== Button Interaction =====
+  if (i.isButton() && i.customId === "rr_refresh") {
+    const guild = i.guild;
+    const members = await guild.members.fetch();
+    const dbAll = loadDB();
 
-    const channel = i.options.getChannel("channel");
-    joinVoiceChannel({
-      channelId: channel.id,
-      guildId: channel.guild.id,
-      adapterCreator: channel.guild.voiceAdapterCreator,
-      selfDeaf: false
+    const embed = new EmbedBuilder()
+      .setColor(0x87cefa)
+      .setTitle("📋 Panel : รายชื่อสมาชิกที่ถือยศ (อัปเดตแล้ว)");
+
+    members.forEach(m => {
+      if (m.user.bot) return;
+
+      let found;
+      for (const d of Object.values(dbAll)) {
+        if (d.users[m.id]) found = d.users[m.id];
+      }
+
+      if (!found) {
+        embed.addFields({
+          name: `🧑‍🧒‍🧒 ${m.user.tag}`,
+          value: "ยศที่ถือ : สมาชิกนี้ยังไม่มียศ",
+          inline: false
+        });
+      } else {
+        const date = new Date(found.time);
+        embed.addFields({
+          name: `🧑‍🧒‍🧒 ${m.user.tag}`,
+          value:
+`ยศที่ถือ : ${found.emoji}
+📅 วันที่ ${formatThaiDate(date)}
+⏰ เวลา ${date.toLocaleTimeString("th-TH")}
+${getPeriod(date)}`,
+          inline: false
+        });
+      }
     });
 
-    return i.reply({ content: `✅ บอทเข้าห้องเสียง ${channel}`, ephemeral: true });
+    return i.update({ embeds: [embed] });
   }
 });
 
@@ -253,22 +327,18 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
   if (data.users[user.id]) {
     await reaction.users.remove(user.id).catch(() => {});
-
     await user.send({
       embeds: [
         new EmbedBuilder()
           .setColor(0xffb6c1)
           .setDescription(
-` > #💌 แจ้งเตือนจากเซิฟเวอร์
+`💌 แจ้งเตือนจากเซิฟเวอร์
 ${SERVER_NAME}
 ${SERVER_INVITE}
 
-- สวัสดี <@${user.id}> ✨
-
-> - คุณต้องกดอิโมจิ #อันเดิม
-- เพื่อถอนยศที่เลือกไว้ก่อนนะคะ
-
-- จากนั้นสามารถกลับไปเลือกยศใหม่ ๆ ได้เลย 💖`
+สวัสดี <@${user.id}> ✨
+กรุณากดอิโมจิ “อันเดิม” เพื่อถอนยศก่อน
+แล้วค่อยกลับมาเลือกยศใหม่ได้นะคะ 💖`
           )
       ]
     }).catch(() => {});
@@ -276,11 +346,7 @@ ${SERVER_INVITE}
   }
 
   await member.roles.add(roleId).catch(() => {});
-  data.users[user.id] = {
-    roleId,
-    emoji: emojiKey,
-    time: Date.now()
-  };
+  data.users[user.id] = { roleId, emoji: emojiKey, time: Date.now() };
   saveDB(db);
 });
 
