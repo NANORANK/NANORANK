@@ -54,7 +54,7 @@ const thaiTime = d =>
     hour12: false
   }).format(d);
 
-// ✅ ADD ONLY : ช่วงเวลา
+// ================== PERIOD ==================
 const thaiPeriod = d => {
   const h = Number(
     new Intl.DateTimeFormat("en-US", {
@@ -63,14 +63,13 @@ const thaiPeriod = d => {
       hour12: false
     }).format(d)
   );
-
   if (h >= 6 && h <= 11) return "☀️ ตอนเช้า";
   if (h >= 12 && h <= 15) return "🌤️ ตอนบ่าย";
   if (h >= 16 && h <= 18) return "🌇 ตอนเย็น";
   return "🌙 ตอนมืด";
 };
 
-// ================== RR EMBED ==================
+// ================== RR EMBED (เดิม - ห้ามแตะ) ==================
 function buildRRMessage(data) {
   let desc =
 ` # 🎭 กดอิโมจิรับยศ (1 คน / 1 ยศ)
@@ -90,6 +89,36 @@ function buildRRMessage(data) {
 
   return new EmbedBuilder()
     .setColor(0xffc0cb)
+    .setDescription(desc);
+}
+
+// ================== RR EMBED (เกมโปรด - ADD ONLY) ==================
+function buildRRMessageGame(data) {
+  const e1 = "<a:emoji_45:1450268441784221736>";
+  const e2 = "<:emoji_43:1450268347689209987>";
+  const e3 = "<a:emoji_44:1450268382166257867>";
+  const e4 = "<a:haste:1450265124341289001>";
+  const e5 = "<a:strength:1450265525023146127>";
+
+  let desc =
+` # 🎮 เลือกรับยศเกมโปรด (1 คน / 1 เกม)
+> - ${e1} เลือกได้เพียง 1 เกมที่คุณชอบ
+> - ${e2} เปลี่ยนเกม ต้องกดอิโมจิเดิมเพื่อลบก่อน
+> - ${e3} เลือกเกมใหม่ได้ทันที
+> - ${e4} กดเกิน 1 อัน ระบบจะล็อกให้อัตโนมัติ
+> - ${e5} บอทจะ DM แจ้งเตือนทันที
+╭┈ ✧ : # เลือกรับยศเกมที่คุณชอบ 🎮
+`;
+
+  for (const [emoji, roleId] of Object.entries(data.roles)) {
+    desc += ` | ${emoji}・<@&${roleId}>\n`;
+  }
+
+  desc +=
+`╰ ┈ ✧ : # 1 คน 1 เกม เท่านั้น 🔥 ┆ • ➵ BY Zemon Źx`;
+
+  return new EmbedBuilder()
+    .setColor(0x00bfff)
     .setDescription(desc);
 }
 
@@ -172,7 +201,6 @@ function getUserAllRoles(db, userId) {
   const result = [];
   for (const d of Object.values(db)) {
     if (!d.users || !d.users[userId]) continue;
-
     result.push({
       channelId: d.channelId,
       messageId: d.messageId,
@@ -199,8 +227,14 @@ client.on("interactionCreate", async (i) => {
     let data = Object.values(db).find(d => d.channelId === i.channel.id);
     let msg;
 
+    const isGame =
+      i.channel.name.includes("เกม") ||
+      i.channel.name.toLowerCase().includes("game");
+
     if (!data) {
-      msg = await i.channel.send({ embeds: [buildRRMessage({ roles: {} })] });
+      msg = await i.channel.send({
+        embeds: [isGame ? buildRRMessageGame({ roles: {} }) : buildRRMessage({ roles: {} })]
+      });
       data = { channelId: i.channel.id, messageId: msg.id, roles: {}, users: {} };
       db[msg.id] = data;
     } else {
@@ -211,7 +245,9 @@ client.on("interactionCreate", async (i) => {
     saveDB(db);
 
     await msg.react(emoji).catch(() => {});
-    await msg.edit({ embeds: [buildRRMessage(data)] });
+    await msg.edit({
+      embeds: [isGame ? buildRRMessageGame(data) : buildRRMessage(data)]
+    });
 
     return i.editReply("✅ เพิ่มเรียบร้อย");
   }
