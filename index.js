@@ -1,3 +1,4 @@
+// =============== ORIGINAL IMPORTS ===============
 const {
   Client,
   GatewayIntentBits,
@@ -441,10 +442,11 @@ client.on("interactionCreate", async (i) => {
     return i.reply({ content: "❌ ใช้คำสั่งนี้ได้เฉพาะเจ้าของเซิฟเท่านั้น", ephemeral: true });
   }
 
-  // filter text channels only (type 0)
+  // filter text channels only (type 0) และจำกัดไม่เกิน 25 ห้อง
   const textChannels = i.guild.channels.cache
     .filter(c => c.type === 0)
-    .map(c => ({ label: c.name, value: c.id }));
+    .map(c => ({ label: c.name, value: c.id }))
+    .slice(0, 25); // 🔥 FIX: Discord limit
 
   if (textChannels.length === 0) {
     return i.reply({ content: "❌ ไม่มีช่อง Text", ephemeral: true });
