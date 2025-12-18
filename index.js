@@ -77,7 +77,7 @@ function buildRRMessage(data) {
 > - <a:emoji_19:1449151254189314150> จะเลือกยศใหม่ กดอิโมจิเดิมก่อนนะคะ
 > - <a:emoji_34:1450185126901321892> เลือกรับยศใหม่ได้เลย
 > - <a:emoji_35:1450185285613650020> กดเกิน 1 อัน บอทจะ DM แจ้งเตือน
-╭┈ ✧ : # รับยศตกแต่ง ˗ˏˋ꒰ <a:emoji_2:1449148118690959440> ꒱
+** ╭┈ ✧ : รับยศตกแต่ง ˗ˏˋ꒰ <a:emoji_2:1449148118690959440> ꒱ **
 `;
 
   for (const [emoji, roleId] of Object.entries(data.roles)) {
@@ -85,7 +85,7 @@ function buildRRMessage(data) {
   }
 
   desc +=
-`╰ ┈ ✧ : # รับยศตกแต่งฟรี 🐼 ┆ • ➵ BY Zemon Źx`;
+`** ╰ ┈ ✧ : รับยศตกแต่งฟรี 🐼 ┆ • ➵ BY Zemon Źx **`;
 
   return new EmbedBuilder()
     .setColor(0xffc0cb)
@@ -107,7 +107,7 @@ function buildRRMessageGame(data) {
 > - ${e3} เลือกเกมใหม่ได้ทันที
 > - ${e4} กดเกิน 1 อัน ระบบจะล็อกให้อัตโนมัติ
 > - ${e5} บอทจะ DM แจ้งเตือนทันที
-╭┈ ✧ : # เลือกรับยศเกมที่คุณชอบ 🎮
+** ╭┈ ✧ : เลือกรับยศเกมที่คุณชอบ 🎮 **
 `;
 
   for (const [emoji, roleId] of Object.entries(data.roles)) {
@@ -115,7 +115,7 @@ function buildRRMessageGame(data) {
   }
 
   desc +=
-`╰ ┈ ✧ : # 1 คน 1 เกม เท่านั้น 🔥 ┆ • ➵ BY Zemon Źx`;
+`** ╰ ┈ ✧ : 1 คน 1 เกม เท่านั้น 🔥 ┆ • ➵ BY Zemon Źx **`;
 
   return new EmbedBuilder()
     .setColor(0x00bfff)
@@ -288,7 +288,7 @@ client.on("interactionCreate", async (i) => {
 
       if (infos.length === 0) {
         embed.addFields({
-          name: ` > - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
+          name: ` > 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
           value: " > - 🎐 ยศตกแต่ง : ยังไม่มียศ",
           inline: false
         });
@@ -296,7 +296,7 @@ client.on("interactionCreate", async (i) => {
         infos.forEach(info => {
           const d = new Date(info.time);
           embed.addFields({
-            name: ` > - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
+            name: ` > 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
             value:
 ` > - 📍 ช่อง : <#${info.channelId}>
 > - 🎐 ยศตกแต่ง : ${info.emoji} ➜ <@&${info.roleId}>
@@ -348,7 +348,7 @@ client.on("interactionCreate", async (i) => {
       infos.forEach(info => {
         const d = new Date(info.time);
         embed.addFields({
-          name: ` > - 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
+          name: ` > 🧑‍🧒‍🧒 ผู้ใช้ : <@${m.id}>`,
           value:
 ` > - 📍 ช่อง : <#${info.channelId}>
 > - 🎐 ยศตกแต่ง : ${info.emoji} ➜ <@&${info.roleId}>
