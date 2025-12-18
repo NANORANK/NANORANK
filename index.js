@@ -419,4 +419,145 @@ client.on("messageReactionRemove", async (reaction, user) => {
   saveDB(db);
 });
 
+// ================== ADD ONLY : EMBED POST SYSTEM ==================
+
+// Store เลือกช่องชั่วคราว
+const embedPostStore = {};
+
+// เพิ่มคำสั่งใหม่ (ไม่แก้ array เดิม — แค่ push)
+commands.push(
+  new SlashCommandBuilder()
+    .setName("embedpost")
+    .setDescription("Owner เท่านั้น: ส่ง Embed แบบ Custom")
+);
+
+// ================== /embedpost (chat command) ==================
+client.on("interactionCreate", async (i) => {
+  if (!i.isChatInputCommand()) return;
+  if (i.commandName !== "embedpost") return;
+
+  // owner check
+  if (i.guild.ownerId !== i.user.id) {
+    return i.reply({ content: "❌ ใช้คำสั่งนี้ได้เฉพาะเจ้าของเซิฟเท่านั้น", ephemeral: true });
+  }
+
+  // filter text channels only (type 0)
+  const textChannels = i.guild.channels.cache
+    .filter(c => c.type === 0)
+    .map(c => ({ label: c.name, value: c.id }));
+
+  if (textChannels.length === 0) {
+    return i.reply({ content: "❌ ไม่มีช่อง Text", ephemeral: true });
+  }
+
+  const { StringSelectMenuBuilder } = require("discord.js");
+
+  const row = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId("embedpost_channel_select")
+      .setPlaceholder("เลือกช่องส่งข้อความ")
+      .addOptions(textChannels)
+  );
+
+  return i.reply({
+    content: "📌 เลือกช่องข้อความก่อนนะคะ",
+    components: [row],
+    ephemeral: true
+  });
+});
+
+// ================== SELECT MENU ==================
+client.on("interactionCreate", async (i) => {
+  if (!i.isStringSelectMenu()) return;
+  if (i.customId !== "embedpost_channel_select") return;
+
+  const channelId = i.values[0];
+  embedPostStore[i.user.id] = { channelId };
+
+  const { ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
+
+  const modal = new ModalBuilder()
+    .setCustomId("embedpost_modal")
+    .setTitle("สร้าง Embed Custom");
+
+  const t1 = new TextInputBuilder()
+    .setCustomId("title")
+    .setLabel("ชื่อหัวข้อใหญ่")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  const t2 = new TextInputBuilder()
+    .setCustomId("desc")
+    .setLabel("ข้อความอธิบาย (ไม่จำกัด)")
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true);
+
+  const t3 = new TextInputBuilder()
+    .setCustomId("small")
+    .setLabel("ลิ้งค์ thumbnail (มุมขวาบน)")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false);
+
+  const t4 = new TextInputBuilder()
+    .setCustomId("big")
+    .setLabel("ลิ้งค์รูปใหญ่")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false);
+
+  const t5 = new TextInputBuilder()
+    .setCustomId("color")
+    .setLabel("โค้ดสี HEX เช่น #ff0000")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(t1),
+    new ActionRowBuilder().addComponents(t2),
+    new ActionRowBuilder().addComponents(t3),
+    new ActionRowBuilder().addComponents(t4),
+    new ActionRowBuilder().addComponents(t5)
+  );
+
+  return i.showModal(modal);
+});
+
+// ================== MODAL SUBMIT ==================
+client.on("interactionCreate", async (i) => {
+  if (!i.isModalSubmit()) return;
+  if (i.customId !== "embedpost_modal") return;
+
+  const saved = embedPostStore[i.user.id];
+  if (!saved) {
+    return i.reply({ content: "❌ ไม่เจอช่องที่เลือก", ephemeral: true });
+  }
+
+  const ch = i.guild.channels.cache.get(saved.channelId);
+  if (!ch) {
+    return i.reply({ content: "❌ ช่องนี้ไม่อยู่แล้ว", ephemeral: true });
+  }
+
+  const title = i.fields.getTextInputValue("title");
+  const desc = i.fields.getTextInputValue("desc");
+  const small = i.fields.getTextInputValue("small");
+  const big = i.fields.getTextInputValue("big");
+  const color = i.fields.getTextInputValue("color") || "#ffffff";
+
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(desc)
+    .setColor(color);
+
+  if (small) embed.setThumbnail(small);
+  if (big) embed.setImage(big);
+
+  await ch.send({ embeds: [embed] });
+
+  delete embedPostStore[i.user.id];
+
+  return i.reply({
+    content: "✅ ส่ง Embed เรียบร้อยแล้วค้าบ!",
+    ephemeral: true
+  });
+});
+
 client.login(config.TOKEN);
